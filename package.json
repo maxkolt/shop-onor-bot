@@ -1,0 +1,36 @@
+{
+  "name": "onor-app",
+  "version": "1.0.0",
+  "description": "Telegram bot for submitting and managing ads with subscription functionality",
+  "main": "src/bot/index.js",
+  "scripts": {
+    "start": "node src/bot/index.js",
+    "dev": "nodemon src/bot/index.js",
+    "list-subscriptions": "node scripts/listSubscriptions.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "body-parser": "^1.20.3",
+    "dotenv": "^16.0.3",
+    "express": "^4.21.2",
+    "mongoose": "^7.0.3",
+    "telegraf": "^4.16.3",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "ads",
+    "subscriptions",
+    "telegraf",
+    "mongodb"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
