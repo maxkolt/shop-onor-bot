@@ -1,7 +1,7 @@
 const { Scenes, Markup } = require('telegraf');
 const { UserModel, AdModel } = require('./models');
 
-const CHANNEL_ID = '@shop_onor'; // Заменить, если используешь chat_id
+const CHANNEL_ID = -1002364231507; // Заменить, если используешь chat_id
 
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 

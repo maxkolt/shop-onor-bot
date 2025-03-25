@@ -32,13 +32,21 @@ bot.use(session());
 bot.use(stage.middleware());
 
 // === Команды ===
-bot.command('start', (ctx) => {
-  return ctx.reply(
+bot.command('start', async (ctx) => {
+  await ctx.reply(
     'Добро пожаловать! Используйте меню для управления:',
     Markup.keyboard([
       ['Подать объявление'],
-      ['Помощь'],
+      ['Канал с объявлениями', 'Помощь'],
     ]).resize()
+  );
+
+  // Инлайн кнопка перехода в канал
+  await ctx.reply(
+    '📢',
+    Markup.inlineKeyboard([
+      Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
+    ])
   );
 });
 
