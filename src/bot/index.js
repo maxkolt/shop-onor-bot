@@ -5,7 +5,7 @@ const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel } = require('./models');
 
 // === Конфигурация ===
-const BOT_TOKEN = '7785639584:AAGWHt_VWdfFXS-tYfsDw0gOHmcyu2lolks';
+const BOT_TOKEN = '7690007041:AAFEBGKm_pBWtdryd4pc98f-OnzpzjaLI70';
 const MONGO_URI = 'mongodb+srv://12345kolt:kolosok12M@cluster0.bxxiz.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0';
 
 // === Подключение к MongoDB ===
