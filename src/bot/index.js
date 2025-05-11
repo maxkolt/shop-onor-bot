@@ -1,3 +1,6 @@
+// Подключаем dotenv
+require('dotenv').config();
+
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 // const YookassaPaymentService = require('./paymentService'); // отключено временно
@@ -5,8 +8,8 @@ const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel } = require('./models');
 
 // === Конфигурация ===
-const BOT_TOKEN = '7690007041:AAFEBGKm_pBWtdryd4pc98f-OnzpzjaLI70';
-const MONGO_URI = 'mongodb+srv://12345kolt:kolosok12M@cluster0.bxxiz.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Cluster0';
+const BOT_TOKEN = process.env.BOT_TOKEN;  // Токен бота из .env
+const MONGO_URI = process.env.MONGO_URI;  // Строка подключения из .env
 
 // === Подключение к MongoDB ===
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -52,7 +55,6 @@ bot.hears('Канал с объявлениями', async (ctx) => {
   );
 });
 
-
 // === Обработка кнопки "Подать объявление"
 bot.hears('Подать объявление', async (ctx) => {
   const userId = ctx.chat.id;
@@ -66,17 +68,15 @@ bot.hears('Подать объявление', async (ctx) => {
   return ctx.scene.enter('adSubmission');
 });
 
-
-  // Отключено временно — логика подписки
-  /*
-  if (!user.hasSubscription && user.adCount >= 3) {
-    return ctx.reply(
-      'Вы достигли лимита бесплатных объявлений. Чтобы продолжить, оформите подписку.',
-      Markup.inlineKeyboard([[Markup.button.callback('Оформить подписку', 'subscribe')]])
-    );
-  }
-  */
-
+// Отключено временно — логика подписки
+/*
+if (!user.hasSubscription && user.adCount >= 3) {
+  return ctx.reply(
+    'Вы достигли лимита бесплатных объявлений. Чтобы продолжить, оформите подписку.',
+    Markup.inlineKeyboard([[Markup.button.callback('Оформить подписку', 'subscribe')]])
+  );
+}
+*/
 
 /*
 // === Подписка (временно отключено) ===

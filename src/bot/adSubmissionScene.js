@@ -42,14 +42,17 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
 });
 
 // === ОБЩАЯ ФУНКЦИЯ ПОДПИСИ ===
-const generateCaption = (type, category, description, username) => {
+const generateCaption = (type, category, description) => {
   const now = new Date();
   const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  return `📢 <b>Новое объявление!</b> ${date}\n\n` +
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });  // Получаем время (часы и минуты)
+
+  return `📢 <b>Новое объявление!</b>\n\n` +
     `📂 <b>Категория:</b> ${category}\n` +
-    `📝 <b>Описание:</b> ${description}\n` +
-    `👤 <b>Пользователь:</b> @${username}`;
+    `📝 <b>Описание:</b> ${description}\n\n` +
+    `📅 ${date}, ${time}`;
 };
+
 
 // === ОБРАБОТКА ТЕКСТА ===
 adSubmissionScene.on('text', async (ctx) => {
