@@ -8,8 +8,9 @@ const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel } = require('./models');
 
 // === Конфигурация ===
-const BOT_TOKEN = process.env.BOT_TOKEN;  // Токен бота из .env
-const MONGO_URI = process.env.MONGO_URI;  // Строка подключения из .env
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const MONGO_URI = process.env.MONGO_URI;
+const PORT = process.env.PORT || 3000;
 
 // === Подключение к MongoDB ===
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -134,3 +135,16 @@ bot.catch((err) => {
 bot.launch()
   .then(() => console.log('✅ Бот запущен!'))
   .catch((err) => console.error('❌ Ошибка при запуске бота:', err.message));
+
+// === HTTP сервер (для Render) ===
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Bot is running');
+});
+
+// Запуск HTTP сервера на порту, который используется Render
+app.listen(PORT, () => {
+  console.log(`HTTP сервер запущен на порту ${PORT}`);
+});
+
