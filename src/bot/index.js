@@ -143,9 +143,9 @@ bot.launch()
 // === HTTP сервер (для Render) ===
 const app = express();
 
-// app.get('/', (req, res) => {
-//   res.send('Bot is running');
-// });
+app.get('/', (req, res) => {
+  res.send('Bot is running');
+});
 
 // Задать endpoint для health check
 app.get('/healthz', (req, res) => {
