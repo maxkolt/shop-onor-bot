@@ -147,11 +147,6 @@ app.get('/', (req, res) => {
   res.send('Bot is running');
 });
 
-// Задать endpoint для health check
-app.get('/healthz', (req, res) => {
-  res.status(200).send('Bot is running');
-});
-
 // Запуск HTTP сервера на порту, который используется Render
 app.listen(PORT, () => {
   console.log(`HTTP сервер запущен на порту ${PORT}`);

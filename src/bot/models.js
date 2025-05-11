@@ -13,7 +13,7 @@ const AdSchema = new mongoose.Schema({
   category: { type: String, required: true },
   description: { type: String, required: true },
   mediaType: { type: String, enum: ['photo', 'video', 'document', 'none'], default: 'none' }, // тип медиа
-  mediaFileId: { type: String }, // file_id от Telegram
+  mediaFileId: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
