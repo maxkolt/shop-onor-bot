@@ -1,6 +1,6 @@
 // Подключаем dotenv
 require('dotenv').config();
-
+const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 // const YookassaPaymentService = require('./paymentService'); // отключено временно
