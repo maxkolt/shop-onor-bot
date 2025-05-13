@@ -49,7 +49,6 @@ bot.command('start', async (ctx) => {
   }
 });
 
-
 // === Обработка кнопки "Канал с объявлениями"
 bot.hears('Канал с объявлениями', async (ctx) => {
   await ctx.reply(
@@ -135,25 +134,16 @@ bot.catch((err) => {
   console.error('❌ Ошибка в работе бота:', err.message);
 });
 
-// === Запуск бота ===
-bot.launch()
-  .then(() => console.log('✅ Бот запущен!'))
-  .catch((err) => console.error('❌ Ошибка при запуске бота:', err.message));
-
 // === HTTP сервер (для Render) ===
 const app = express();
 
-app.get('/', (req, res) => {
-  res.send('Bot is running');
-});
+// Устанавливаем webhook
+bot.telegram.setWebhook(`https://your-app-name.onrender.com/${process.env.BOT_TOKEN}`);
 
-app.get('/healthz', (req, res) => {
-  res.status(200).send('Bot is running');
-});
-
+// Обрабатываем запросы от Telegram через webhook
+app.use(bot.webhookCallback(`/`));
 
 // Запуск HTTP сервера на порту, который используется Render
 app.listen(PORT, () => {
   console.log(`HTTP сервер запущен на порту ${PORT}`);
 });
-
