@@ -138,7 +138,7 @@ bot.catch((err) => {
 const app = express();
 
 // Устанавливаем webhook
-bot.telegram.setWebhook(`https://boroxlo-bot-tg.onrender.com/${process.env.BOT_TOKEN}`);
+bot.telegram.setWebhook(`https://boroxlo-bot-tg.onrender.com`);
 
 // Обрабатываем запросы от Telegram через webhook
 app.use(bot.webhookCallback(`/`));
