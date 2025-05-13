@@ -30,12 +30,6 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 // === Инициализация бота ===
 const bot = new Telegraf(BOT_TOKEN);
 
-// === Middleware для логирования входящих обновлений ===
-bot.use(async (ctx, next) => {
-  console.log('🔔 Апдейт:', ctx.update);
-  return next();
-});
-
 // === Подключение сцен ===
 const stage = new Scenes.Stage([adSubmissionScene]);
 bot.use(session());
