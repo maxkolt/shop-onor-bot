@@ -1,7 +1,17 @@
-const {Scenes, Markup} = require('telegraf');
-const {UserModel, AdModel} = require('./models');
+const { Scenes, Markup } = require('telegraf');
+const { UserModel, AdModel } = require('./models');
 
-const CHANNEL_ID = -1002364231507; // Заменить, если используешь chat_id
+// ✅ Маппинг категории на русский язык
+const categoryMap = {
+  auto: '🚗 Авто',
+  tech: '📱 Техника',
+  real_estate: '🏠 Недвижимость',
+  clothing: '👗 Одежда/Обувь',
+  other: '📦 Прочее',
+  pets: '🐾 Товары для животных',
+};
+
+const CHANNEL_ID = -1002364231507;
 
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 
@@ -9,9 +19,9 @@ const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 adSubmissionScene.enter(async (ctx) => {
   const userId = ctx.chat.id;
 
-  let user = await UserModel.findOne({userId});
+  let user = await UserModel.findOne({ userId });
   if (!user) {
-    user = new UserModel({userId, adCount: 0, hasSubscription: false});
+    user = new UserModel({ userId, adCount: 0, hasSubscription: false });
     await user.save();
   }
 
@@ -34,26 +44,27 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = category;
 
   await ctx.reply(
-    `Вы выбрали категорию: ${category}.
+    `Вы выбрали категорию: ${categoryMap[category] || category}.
 1. Введите описание вашего объявления.
 2. Прикрепите, если нужно, фото, видео или файл.
-3. Оставьте ваши контактные данные.(по желанию)
-4. Укажите где вы находитесь.(страна, город).`
+3. Оставьте ваши контактные данные (по желанию).
+4. Укажите где вы находитесь (страна, город).`
   );
 });
 
-// === ОБЩАЯ ФУНКЦИЯ ПОДПИСИ ===
+// === ФУНКЦИЯ ПОДПИСИ К ОБЪЯВЛЕНИЮ ===
 const generateCaption = (type, category, description) => {
   const now = new Date();
-  const date = now.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'});
-  const time = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});  // Получаем время (часы и минуты)
+  const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
-  return `📢 <b>Новое объявление!</b>\n\n` +
-    `📂 <b>Категория:</b> ${category}\n` +
+  return (
+    `📢 <b>Новое объявление!</b>\n\n` +
+    `📂 <b>Категория:</b> <i>${categoryMap[category] || category}</i>\n` +
     `📝 <b>Описание:</b> ${description}\n\n` +
-    `📅 ${date}, ${time}`;
+    `📅 ${date}, ${time}`
+  );
 };
-
 
 // === ОБРАБОТКА ТЕКСТА ===
 adSubmissionScene.on('text', async (ctx) => {
@@ -72,17 +83,15 @@ adSubmissionScene.on('text', async (ctx) => {
   }
 
   try {
-    const ad = new AdModel({userId, category, description, createdAt: new Date()});
+    const ad = new AdModel({ userId, category, description, createdAt: new Date() });
     await ad.save();
 
-    const user = await UserModel.findOne({userId});
+    const user = await UserModel.findOne({ userId });
     user.adCount += 1;
     await user.save();
 
-    const username = ctx.from.username || `id${ctx.from.id}`;
-    const post = generateCaption('text', category, description, username);
-
-    await ctx.telegram.sendMessage(CHANNEL_ID, post, {parse_mode: 'HTML'});
+    const post = generateCaption('text', category, description);
+    await ctx.telegram.sendMessage(CHANNEL_ID, post, { parse_mode: 'HTML' });
 
     await ctx.reply('Ваше объявление добавлено!');
   } catch (error) {
@@ -116,13 +125,11 @@ adSubmissionScene.on('photo', async (ctx) => {
     });
     await ad.save();
 
-    const user = await UserModel.findOne({userId});
+    const user = await UserModel.findOne({ userId });
     user.adCount += 1;
     await user.save();
 
-    const username = ctx.from.username || `id${ctx.from.id}`;
-    const caption = generateCaption('photo', category, description, username);
-
+    const caption = generateCaption('photo', category, description);
     await ctx.telegram.sendPhoto(CHANNEL_ID, photo, {
       caption,
       parse_mode: 'HTML',
@@ -142,7 +149,6 @@ adSubmissionScene.on('video', async (ctx) => {
   const category = ctx.session.category;
   const video = ctx.message.video.file_id;
   const description = ctx.message.caption || 'Описание отсутствует';
-  const username = ctx.from.username || `id${ctx.from.id}`;
 
   if (!category) {
     await ctx.reply('Выберите категорию перед отправкой видео.');
@@ -150,8 +156,7 @@ adSubmissionScene.on('video', async (ctx) => {
   }
 
   try {
-    const caption = generateCaption('video', category, description, username);
-
+    const caption = generateCaption('video', category, description);
     await ctx.telegram.sendVideo(CHANNEL_ID, video, {
       caption,
       parse_mode: 'HTML',
@@ -171,7 +176,6 @@ adSubmissionScene.on('document', async (ctx) => {
   const category = ctx.session.category;
   const doc = ctx.message.document.file_id;
   const description = ctx.message.caption || 'Описание отсутствует';
-  const username = ctx.from.username || `id${ctx.from.id}`;
 
   if (!category) {
     await ctx.reply('Выберите категорию перед отправкой файла.');
@@ -179,8 +183,7 @@ adSubmissionScene.on('document', async (ctx) => {
   }
 
   try {
-    const caption = generateCaption('document', category, description, username);
-
+    const caption = generateCaption('document', category, description);
     await ctx.telegram.sendDocument(CHANNEL_ID, doc, {
       caption,
       parse_mode: 'HTML',
@@ -195,4 +198,4 @@ adSubmissionScene.on('document', async (ctx) => {
   ctx.scene.leave();
 });
 
-module.exports = {adSubmissionScene};
+module.exports = { adSubmissionScene };
