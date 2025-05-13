@@ -1,9 +1,9 @@
-// Подключаем dotenv
+// === Загрузка переменных окружения ===
 require('dotenv').config();
+
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-// const YookassaPaymentService = require('./paymentService'); // отключено временно
 const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel } = require('./models');
 
@@ -11,6 +11,13 @@ const { UserModel } = require('./models');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
+const WEBHOOK_URL = `https://boroxlo-bot-tg.onrender.com`;
+
+// === Проверка конфигурации ===
+if (!BOT_TOKEN || !MONGO_URI) {
+  console.error('❌ BOT_TOKEN или MONGO_URI не установлены в .env');
+  process.exit(1);
+}
 
 // === Подключение к MongoDB ===
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -23,19 +30,18 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 // === Инициализация бота ===
 const bot = new Telegraf(BOT_TOKEN);
 
-bot.telegram.getMe()
-  .then((botInfo) => console.log(`🤖 Бот подключён`))
-  .catch((err) => {
-    console.error('❌ Ошибка подключения к Telegram API:', err.message);
-    process.exit(1);
-  });
+// === Middleware для логирования входящих обновлений ===
+bot.use(async (ctx, next) => {
+  console.log('🔔 Апдейт:', ctx.update);
+  return next();
+});
 
-// === Подключаем сцены ===
+// === Подключение сцен ===
 const stage = new Scenes.Stage([adSubmissionScene]);
 bot.use(session());
 bot.use(stage.middleware());
 
-// === Команды ===
+// === Команда /start ===
 bot.command('start', async (ctx) => {
   if (!ctx.session.welcomeMessageSent) {
     await ctx.reply(
@@ -49,7 +55,7 @@ bot.command('start', async (ctx) => {
   }
 });
 
-// === Обработка кнопки "Канал с объявлениями"
+// === Обработка кнопки "Канал с объявлениями" ===
 bot.hears('Канал с объявлениями', async (ctx) => {
   await ctx.reply(
     'Сюда 👇',
@@ -59,7 +65,7 @@ bot.hears('Канал с объявлениями', async (ctx) => {
   );
 });
 
-// === Обработка кнопки "Подать объявление"
+// === Обработка кнопки "Подать объявление" ===
 bot.hears('Подать объявление', async (ctx) => {
   const userId = ctx.chat.id;
 
@@ -72,56 +78,7 @@ bot.hears('Подать объявление', async (ctx) => {
   return ctx.scene.enter('adSubmission');
 });
 
-// Отключено временно — логика подписки
-/*
-if (!user.hasSubscription && user.adCount >= 3) {
-  return ctx.reply(
-    'Вы достигли лимита бесплатных объявлений. Чтобы продолжить, оформите подписку.',
-    Markup.inlineKeyboard([[Markup.button.callback('Оформить подписку', 'subscribe')]])
-  );
-}
-*/
-
-/*
-// === Подписка (временно отключено) ===
-bot.hears('Подписка', async (ctx) => {
-  const userId = ctx.chat.id;
-
-  const invoice = await paymentService.createInvoice(139, 'RUB', 'Оплата подписки', userId);
-
-  if (invoice) {
-    await ctx.reply(
-      'Оплатите подписку по ссылке:',
-      Markup.inlineKeyboard([
-        [Markup.button.url('Оплатить', invoice.url)],
-        [Markup.button.callback('Я оплатил', 'check_payment')],
-      ])
-    );
-  } else {
-    await ctx.reply('Ошибка при создании счёта. Попробуйте позже.');
-  }
-});
-
-bot.action('check_payment', async (ctx) => {
-  const userId = ctx.chat.id;
-  const user = await UserModel.findOne({ userId });
-
-  if (!user) {
-    return ctx.reply('Вы не зарегистрированы.');
-  }
-
-  const paymentStatus = await paymentService.checkPaymentStatus();
-
-  if (paymentStatus.isPaid) {
-    user.hasSubscription = true;
-    await user.save();
-    return ctx.reply('Оплата подтверждена! Подписка активна.');
-  }
-
-  return ctx.reply('Оплата не найдена или ещё не подтверждена.');
-});
-*/
-
+// === Обработка кнопки "Помощь" ===
 bot.hears('Помощь', async (ctx) => {
   await ctx.reply(
     'По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)',
@@ -134,16 +91,17 @@ bot.catch((err) => {
   console.error('❌ Ошибка в работе бота:', err.message);
 });
 
-// === HTTP сервер (для Render) ===
+// === Запуск сервера Express ===
 const app = express();
+app.use(bot.webhookCallback('/'));
 
-// Устанавливаем webhook
-bot.telegram.setWebhook(`https://boroxlo-bot-tg.onrender.com`);
+app.listen(PORT, async () => {
+  console.log(`🌐 HTTP сервер запущен на порту ${PORT}`);
 
-// Обрабатываем запросы от Telegram через webhook
-app.use(bot.webhookCallback(`/`));
-
-// Запуск HTTP сервера на порту, который используется Render
-app.listen(PORT, () => {
-  console.log(`HTTP сервер запущен на порту ${PORT}`);
+  try {
+    await bot.telegram.setWebhook(WEBHOOK_URL);
+    console.log(`✅ Webhook установлен: ${WEBHOOK_URL}`);
+  } catch (err) {
+    console.error('❌ Не удалось установить webhook:', err.message);
+  }
 });
