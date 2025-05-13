@@ -1,5 +1,5 @@
-const { Scenes, Markup } = require('telegraf');
-const { UserModel, AdModel } = require('./models');
+const {Scenes, Markup} = require('telegraf');
+const {UserModel, AdModel} = require('./models');
 
 const CHANNEL_ID = -1002364231507; // Заменить, если используешь chat_id
 
@@ -9,9 +9,9 @@ const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 adSubmissionScene.enter(async (ctx) => {
   const userId = ctx.chat.id;
 
-  let user = await UserModel.findOne({ userId });
+  let user = await UserModel.findOne({userId});
   if (!user) {
-    user = new UserModel({ userId, adCount: 0, hasSubscription: false });
+    user = new UserModel({userId, adCount: 0, hasSubscription: false});
     await user.save();
   }
 
@@ -37,15 +37,16 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
     `Вы выбрали категорию: ${category}.
 1. Введите описание вашего объявления.
 2. Прикрепите, если нужно, фото, видео или файл.
-3. Оставьте ваши контактные данные.`
+3. Оставьте ваши контактные данные.(по желанию)
+4. Укажите где вы находитесь.(страна, город).`
   );
 });
 
 // === ОБЩАЯ ФУНКЦИЯ ПОДПИСИ ===
 const generateCaption = (type, category, description) => {
   const now = new Date();
-  const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });  // Получаем время (часы и минуты)
+  const date = now.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit', year: 'numeric'});
+  const time = now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});  // Получаем время (часы и минуты)
 
   return `📢 <b>Новое объявление!</b>\n\n` +
     `📂 <b>Категория:</b> ${category}\n` +
@@ -71,17 +72,17 @@ adSubmissionScene.on('text', async (ctx) => {
   }
 
   try {
-    const ad = new AdModel({ userId, category, description, createdAt: new Date() });
+    const ad = new AdModel({userId, category, description, createdAt: new Date()});
     await ad.save();
 
-    const user = await UserModel.findOne({ userId });
+    const user = await UserModel.findOne({userId});
     user.adCount += 1;
     await user.save();
 
     const username = ctx.from.username || `id${ctx.from.id}`;
     const post = generateCaption('text', category, description, username);
 
-    await ctx.telegram.sendMessage(CHANNEL_ID, post, { parse_mode: 'HTML' });
+    await ctx.telegram.sendMessage(CHANNEL_ID, post, {parse_mode: 'HTML'});
 
     await ctx.reply('Ваше объявление добавлено!');
   } catch (error) {
@@ -115,7 +116,7 @@ adSubmissionScene.on('photo', async (ctx) => {
     });
     await ad.save();
 
-    const user = await UserModel.findOne({ userId });
+    const user = await UserModel.findOne({userId});
     user.adCount += 1;
     await user.save();
 
@@ -194,4 +195,4 @@ adSubmissionScene.on('document', async (ctx) => {
   ctx.scene.leave();
 });
 
-module.exports = { adSubmissionScene };
+module.exports = {adSubmissionScene};
