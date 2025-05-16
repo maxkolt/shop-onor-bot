@@ -11,31 +11,37 @@ const { UserModel, AdModel } = require('./models');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
-const WEBHOOK_URL = `https://boroxlo-bot-tg.onrender.com`;
+const WEBHOOK_URL = 'https://boroxlo-bot-tg.onrender.com';
 
 if (!BOT_TOKEN || !MONGO_URI) {
   console.error('❌ BOT_TOKEN или MONGO_URI не установлены в .env');
   process.exit(1);
 }
 
+// Подключаемся к MongoDB
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('✅ База данных подключена!'))
-  .catch((err) => {
+  .catch(err => {
     console.error('❌ Ошибка подключения к базе данных:', err.message);
     process.exit(1);
   });
 
 const bot = new Telegraf(BOT_TOKEN);
-
 const stage = new Scenes.Stage([adSubmissionScene]);
 bot.use(session());
 bot.use(stage.middleware());
 
+// === Команда /start ===
 bot.command('start', async (ctx) => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
   if (!user) {
-    user = new UserModel({ userId, adCount: 0, hasSubscription: false, location: { country: 'не указано', city: 'не указано' } });
+    user = new UserModel({
+      userId,
+      adCount: 0,
+      hasSubscription: false,
+      location: { country: 'не указано', city: 'не указано' }
+    });
     await user.save();
   }
 
@@ -45,187 +51,210 @@ bot.command('start', async (ctx) => {
       Markup.keyboard([
         ['Подать объявление'],
         ['Объявления в моём городе', 'Фильтр по категории'],
-        ['Канал с объявлениями', 'Помощь'],
+        ['Канал с объявлениями', 'Помощь']
       ]).resize()
     );
     ctx.session.welcomeMessageSent = true;
   }
 
-  if (!user || !user.location || user.location.city === 'не указано' || user.location.country === 'не указано')
-  {
+  if (user.location.city === 'не указано' || user.location.country === 'не указано') {
     ctx.session.awaitingLocationInput = true;
-    await ctx.reply('📍 Введите ваше местоположение в формате: "Страна, Город"');
+    await ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):');
   }
 });
 
-
+// === Команда /setlocation ===
 bot.command('setlocation', async (ctx) => {
   ctx.session.awaitingLocationInput = true;
-  await ctx.reply('📍 Введите ваше местоположение в формате: "Страна, Город"');
+  await ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):');
 });
 
+// === Обработчик текста для локации ===
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const text = ctx.message.text.trim();
-    const parts = text.split(/[,\\n]+/).map(p => p.trim()).filter(Boolean);
+    const parts = text.split(/[\s,\n]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length < 2) {
-      return await ctx.reply('⚠️ Пожалуйста, укажите как минимум страну и город (например: Россия Москва)');
+      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия Москва');
     }
-
     const [country, ...cityParts] = parts;
     const city = cityParts.join(' ');
 
-    const userId = ctx.chat.id;
-    const user = await UserModel.findOne({ userId });
-
+    const user = await UserModel.findOne({ userId: ctx.chat.id });
     if (user) {
       user.location = { country, city };
       await user.save();
       ctx.session.awaitingLocationInput = false;
-      return await ctx.reply(`✅ Местоположение обновлено: ${country}, ${city}`);
+      return ctx.reply(`✅ Локация сохранена: ${country}, ${city}`);
     }
-
-    return ctx.reply('⚠️ Пользователь не найден.');
+    return ctx.reply('⚠️ Сначала начните с /start');
   }
-
   return next();
 });
 
-bot.hears('Канал с объявлениями', async (ctx) => {
-  await ctx.reply(
-    'Сюда 👇',
-    Markup.inlineKeyboard([
-      Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
-    ])
-  );
-});
+// === Другие кнопки ===
+bot.hears('Канал с объявлениями', ctx =>
+  ctx.reply('Сюда 👇', Markup.inlineKeyboard([
+    Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
+  ]))
+);
 
 bot.hears('Подать объявление', async (ctx) => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
   if (!user) {
-    user = new UserModel({ userId, adCount: 0, hasSubscription: false });
+    user = new UserModel({
+      userId,
+      adCount: 0,
+      hasSubscription: false,
+      location: { country: 'не указано', city: 'не указано' }
+    });
     await user.save();
   }
   return ctx.scene.enter('adSubmission');
 });
 
-bot.hears('Помощь', async (ctx) => {
-  await ctx.reply(
-    'По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)',
+bot.hears('Помощь', ctx =>
+  ctx.reply(
+    'По всем вопросам обращайтесь к администратору:\n' +
+    '[Администратор: @max12kolt](https://t.me/max12kolt)',
     { parse_mode: 'MarkdownV2' }
-  );
-});
+  )
+);
 
-// === Обработка кнопки "Объявления в моём городе" ===
+// === Объявления в моём городе ===
 bot.hears('Объявления в моём городе', async (ctx) => {
   ctx.session.cityAdOffset = 0;
-  return sendCityAds(ctx);
+  await sendCityAds(ctx);
 });
 
-// === Кнопка "Фильтр по категории" ===
-bot.hears('Фильтр по категории', async (ctx) => {
+// === Фильтр по категории (без учёта локации) ===
+bot.hears('Фильтр по категории', ctx => {
   ctx.session.cityAdOffset = 0;
-  await ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
+  return ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
     [Markup.button.callback('🚗 Авто', 'filter_auto')],
     [Markup.button.callback('📱 Техника', 'filter_tech')],
     [Markup.button.callback('🏠 Недвижимость', 'filter_real_estate')],
     [Markup.button.callback('👗 Одежда/Обувь', 'filter_clothing')],
     [Markup.button.callback('📦 Прочее', 'filter_other')],
-    [Markup.button.callback('🐾 Товары для животных', 'filter_pets')],
+    [Markup.button.callback('🐾 Товары для животных', 'filter_pets')]
   ]));
 });
 
+// === Обработчики callback ===
 bot.action(/filter_(.+)/, async (ctx) => {
-  const selectedCategory = ctx.match[1];
-  ctx.session.selectedCategory = selectedCategory;
+  const categoryFilter = ctx.match[1];
+  ctx.session.selectedCategory = categoryFilter;
   ctx.session.cityAdOffset = 0;
   await ctx.answerCbQuery();
-  return sendCityAds(ctx, selectedCategory);
-});
 
-bot.action('more_city_ads', async (ctx) => {
-  ctx.session.cityAdOffset = (ctx.session.cityAdOffset || 0) + 5;
-  const category = ctx.session.selectedCategory || null;
-  await ctx.answerCbQuery();
-  await sendCityAds(ctx, category);
-});
-
-const categoryMap = {
-  auto: '🚗 Авто',
-  tech: '📱 Техника',
-  real_estate: '🏠 Недвижимость',
-  clothing: '👗 Одежда/Обувь',
-  other: '📦 Прочее',
-  pets: '🐾 Товары для животных',
-};
-
-const sendCityAds = async (ctx, categoryFilter = null) => {
-  const userId = ctx.chat.id;
-  const user = await UserModel.findOne({ userId });
-
-  if (!user || !user.location || user.location.city === 'не указано') {
-    return ctx.reply('⚠️ Вы ещё не указали местоположение. Используйте команду /setlocation');
-  }
-
-  const city = user.location.city;
+  // выдаём по категории без фильтра по местоположению
   const offset = ctx.session.cityAdOffset || 0;
-  const ads = await AdModel.find({}).sort({ createdAt: -1 });
-  const matchingAds = [];
+  const ads = await AdModel.find({ category: categoryFilter })
+    .sort({ createdAt: -1 })
+    .skip(offset)
+    .limit(5);
+
+  if (!ads.length) {
+    return ctx.reply(`🔍 Объявлений в категории "${categoryFilter}" пока нет.`);
+  }
 
   for (const ad of ads) {
-    const adUser = await UserModel.findOne({ userId: ad.userId });
-    const sameCity = adUser?.location?.city?.toLowerCase() === city.toLowerCase();
-    const sameCategory = !categoryFilter || ad.category === categoryFilter;
-    if (sameCity && sameCategory) {
-      matchingAds.push({ ad, location: adUser.location });
+    const user = await UserModel.findOne({ userId: ad.userId });
+    const loc = user?.location || { country:'не указано', city:'не указано' };
+    const caption =
+      `📂 <b>${categoryFilter}</b>\n` +
+      `📝 ${ad.description}\n` +
+      `📍 ${loc.country}, ${loc.city}`;
+    if (ad.mediaType === 'photo') {
+      await ctx.telegram.sendPhoto(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else if (ad.mediaType === 'video') {
+      await ctx.telegram.sendVideo(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else if (ad.mediaType === 'document') {
+      await ctx.telegram.sendDocument(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else {
+      await ctx.replyWithHTML(caption);
     }
   }
 
-  const page = matchingAds.slice(offset, offset + 5);
-  if (page.length === 0) {
-    return ctx.reply(offset === 0
-      ? `🔍 Объявлений в городе "${city}"${categoryFilter ? ` по категории ${categoryMap[categoryFilter]}` : ''} пока нет.`
-      : `🔚 Больше объявлений нет.`);
-  }
-
-  for (const { ad, location } of page) {
-    const caption = `📂 <b>${categoryMap[ad.category] || ad.category}</b>\n📝 ${ad.description}\n📍 ${location.country}, ${location.city}`;
-    try {
-      if (ad.mediaType === 'photo') {
-        await ctx.telegram.sendPhoto(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else if (ad.mediaType === 'video') {
-        await ctx.telegram.sendVideo(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else if (ad.mediaType === 'document') {
-        await ctx.telegram.sendDocument(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else {
-        await ctx.replyWithHTML(caption);
-      }
-    } catch (error) {
-      console.error('❌ Ошибка при отправке объявления:', error.message);
-    }
-  }
-
-  if (matchingAds.length > offset + 5) {
+  if (ads.length === 5) {
     await ctx.reply('⬇️ Показать ещё?', Markup.inlineKeyboard([
       Markup.button.callback('Показать ещё', 'more_city_ads')
     ]));
   }
-};
-
-bot.catch((err) => {
-  console.error('❌ Ошибка в работе бота:', err.message);
 });
+
+bot.action('more_city_ads', async (ctx) => {
+  ctx.session.cityAdOffset = (ctx.session.cityAdOffset || 0) + 5;
+  await ctx.answerCbQuery();
+  return sendCityAds(ctx, ctx.session.selectedCategory);
+});
+
+// === Пагинация "Объявления в моём городе" ===
+async function sendCityAds(ctx, categoryFilter = null) {
+  const userId = ctx.chat.id;
+  const user = await UserModel.findOne({ userId });
+
+  if (!user || !user.location || user.location.city === 'не указано' || user.location.country === 'не указано') {
+    ctx.session.awaitingLocationInput = true;
+    return ctx.reply('⚠️ Укажите местоположение через /setlocation, например: Россия Москва');
+  }
+
+  const city = user.location.city.toLowerCase();
+  const offset = ctx.session.cityAdOffset || 0;
+  const adsAll = await AdModel.find({}).sort({ createdAt: -1 });
+  const page = [];
+
+  for (const ad of adsAll) {
+    const adUser = await UserModel.findOne({ userId: ad.userId });
+    if (adUser && adUser.location.city.toLowerCase() === city
+      && (!categoryFilter || ad.category === categoryFilter)) {
+      page.push(ad);
+      if (page.length >= offset + 5) break;
+    }
+  }
+
+  const slice = page.slice(offset, offset + 5);
+  if (!slice.length) {
+    return ctx.reply(offset === 0
+      ? `🔍 В вашем городе "${user.location.city}" пока нет объявлений.`
+      : `🔚 Больше объявлений нет.`);
+  }
+
+  for (const ad of slice) {
+    const loc = (await UserModel.findOne({ userId: ad.userId })).location;
+    const caption =
+      `📂 <b>${categoryMap[ad.category] || ad.category}</b>\n` +
+      `📝 ${ad.description}\n` +
+      `📍 ${loc.country}, ${loc.city}`;
+    if (ad.mediaType === 'photo') {
+      await ctx.telegram.sendPhoto(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else if (ad.mediaType === 'video') {
+      await ctx.telegram.sendVideo(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else if (ad.mediaType === 'document') {
+      await ctx.telegram.sendDocument(ctx.chat.id, ad.mediaFileId, { caption, parse_mode:'HTML' });
+    } else {
+      await ctx.replyWithHTML(caption);
+    }
+  }
+
+  if (page.length > offset + 5) {
+    await ctx.reply('⬇️ Показать ещё?', Markup.inlineKeyboard([
+      Markup.button.callback('Показать ещё', 'more_city_ads')
+    ]));
+  }
+}
+
+bot.catch(err => console.error('❌ Ошибка в работе бота:', err));
 
 const app = express();
 app.use(bot.webhookCallback('/'));
-
 app.listen(PORT, async () => {
   console.log(`🌐 HTTP сервер запущен на порту ${PORT}`);
   try {
     await bot.telegram.setWebhook(WEBHOOK_URL);
     console.log(`✅ Webhook установлен: ${WEBHOOK_URL}`);
-  } catch (err) {
-    console.error('❌ Не удалось установить webhook:', err.message);
+  } catch(e) {
+    console.error('❌ Не удалось установить webhook:', e.message);
   }
 });
