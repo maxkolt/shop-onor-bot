@@ -32,6 +32,13 @@ bot.use(session());
 bot.use(stage.middleware());
 
 bot.command('start', async (ctx) => {
+  const userId = ctx.chat.id;
+  let user = await UserModel.findOne({ userId });
+  if (!user) {
+    user = new UserModel({ userId, adCount: 0, hasSubscription: false, location: { country: 'не указано', city: 'не указано' } });
+    await user.save();
+  }
+
   if (!ctx.session.welcomeMessageSent) {
     await ctx.reply(
       'Добро пожаловать! 🎉 Используйте меню для управления:',
@@ -43,7 +50,14 @@ bot.command('start', async (ctx) => {
     );
     ctx.session.welcomeMessageSent = true;
   }
+
+  if (!user || !user.location || user.location.city === 'не указано' || user.location.country === 'не указано')
+  {
+    ctx.session.awaitingLocationInput = true;
+    await ctx.reply('📍 Введите ваше местоположение в формате: "Страна, Город"');
+  }
 });
+
 
 bot.command('setlocation', async (ctx) => {
   ctx.session.awaitingLocationInput = true;
@@ -52,11 +66,14 @@ bot.command('setlocation', async (ctx) => {
 
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
-    const [country, city] = ctx.message.text.split(',').map(s => s.trim());
-
-    if (!country || !city) {
-      return await ctx.reply('⚠️ Неверный формат. Используйте: "Страна, Город"');
+    const text = ctx.message.text.trim();
+    const parts = text.split(/[,\\n]+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2) {
+      return await ctx.reply('⚠️ Пожалуйста, укажите как минимум страну и город (например: Россия Москва)');
     }
+
+    const [country, ...cityParts] = parts;
+    const city = cityParts.join(' ');
 
     const userId = ctx.chat.id;
     const user = await UserModel.findOne({ userId });
