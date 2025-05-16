@@ -5,6 +5,10 @@ const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   adCount: { type: Number, default: 0 },
   hasSubscription: { type: Boolean, default: false },
+  location: {
+    country: { type: String, default: 'не указано' },
+    city: { type: String, default: 'не указано' },
+  },
 });
 
 // Модель объявления
