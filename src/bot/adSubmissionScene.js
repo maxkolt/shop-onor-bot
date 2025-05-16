@@ -4,7 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const { adSubmissionScene } = require('./adSubmissionScene');
+const  adSubmissionScene  = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
 // === Конфигурация ===
@@ -212,3 +212,5 @@ app.listen(PORT, async () => {
     console.error('❌ Не удалось установить webhook:', err.message);
   }
 });
+
+module.exports = adSubmissionScene;
