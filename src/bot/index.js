@@ -5,6 +5,14 @@ const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 const adSubmissionScene = require('./adSubmissionScene');
+const categoryMap = {
+  auto: '🚗 Авто',
+  tech: '📱 Техника',
+  real_estate: '🏠 Недвижимость',
+  clothing: '👗 Одежда/Обувь',
+  other: '📦 Прочее',
+  pets: '🐾 Товары для животных',
+};
 const { UserModel, AdModel } = require('./models');
 
 // === Конфигурация ===
