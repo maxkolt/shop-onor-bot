@@ -4,7 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const { adSubmissionScene } = require('./adSubmissionScene');
+const adSubmissionScene = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
 // === Конфигурация ===
@@ -43,6 +43,35 @@ bot.command('start', async (ctx) => {
     );
     ctx.session.welcomeMessageSent = true;
   }
+});
+
+bot.command('setlocation', async (ctx) => {
+  ctx.session.awaitingLocationInput = true;
+  await ctx.reply('📍 Введите ваше местоположение в формате: "Страна, Город"');
+});
+
+bot.on('text', async (ctx, next) => {
+  if (ctx.session.awaitingLocationInput) {
+    const [country, city] = ctx.message.text.split(',').map(s => s.trim());
+
+    if (!country || !city) {
+      return await ctx.reply('⚠️ Неверный формат. Используйте: "Страна, Город"');
+    }
+
+    const userId = ctx.chat.id;
+    const user = await UserModel.findOne({ userId });
+
+    if (user) {
+      user.location = { country, city };
+      await user.save();
+      ctx.session.awaitingLocationInput = false;
+      return await ctx.reply(`✅ Местоположение обновлено: ${country}, ${city}`);
+    }
+
+    return ctx.reply('⚠️ Пользователь не найден.');
+  }
+
+  return next();
 });
 
 bot.hears('Канал с объявлениями', async (ctx) => {

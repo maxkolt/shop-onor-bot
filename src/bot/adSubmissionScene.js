@@ -1,139 +1,7 @@
-// === Загрузка переменных окружения ===
-require('dotenv').config();
-
-const express = require('express');
-const { Telegraf, Markup, Scenes, session } = require('telegraf');
-const mongoose = require('mongoose');
-const  adSubmissionScene  = require('./adSubmissionScene');
+const { Scenes, Markup } = require('telegraf');
 const { UserModel, AdModel } = require('./models');
 
-// === Конфигурация ===
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 10000;
-const WEBHOOK_URL = `https://boroxlo-bot-tg.onrender.com`;
-
-if (!BOT_TOKEN || !MONGO_URI) {
-  console.error('❌ BOT_TOKEN или MONGO_URI не установлены в .env');
-  process.exit(1);
-}
-
-mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ База данных подключена!'))
-  .catch((err) => {
-    console.error('❌ Ошибка подключения к базе данных:', err.message);
-    process.exit(1);
-  });
-
-const bot = new Telegraf(BOT_TOKEN);
-
-const stage = new Scenes.Stage([adSubmissionScene]);
-bot.use(session());
-bot.use(stage.middleware());
-
-bot.command('start', async (ctx) => {
-  if (!ctx.session.welcomeMessageSent) {
-    await ctx.reply(
-      'Добро пожаловать! 🎉 Используйте меню для управления:',
-      Markup.keyboard([
-        ['Подать объявление'],
-        ['Объявления в моём городе', 'Фильтр по категории'],
-        ['Канал с объявлениями', 'Помощь'],
-      ]).resize()
-    );
-    ctx.session.welcomeMessageSent = true;
-  }
-});
-
-bot.command('setlocation', async (ctx) => {
-  ctx.session.awaitingLocationInput = true;
-  await ctx.reply('📍 Введите ваше местоположение в формате: "Страна, Город"');
-});
-
-bot.on('text', async (ctx, next) => {
-  if (ctx.session.awaitingLocationInput) {
-    const [country, city] = ctx.message.text.split(',').map(s => s.trim());
-
-    if (!country || !city) {
-      return await ctx.reply('⚠️ Неверный формат. Пожалуйста, используйте: "Страна, Город"');
-    }
-
-    const userId = ctx.chat.id;
-    const user = await UserModel.findOne({ userId });
-
-    if (user) {
-      user.location = { country, city };
-      await user.save();
-
-      ctx.session.awaitingLocationInput = false;
-      return await ctx.reply(`✅ Местоположение обновлено: ${country}, ${city}`);
-    } else {
-      return await ctx.reply('⚠️ Пользователь не найден.');
-    }
-  }
-  return next();
-});
-
-bot.hears('Канал с объявлениями', async (ctx) => {
-  await ctx.reply(
-    'Сюда 👇',
-    Markup.inlineKeyboard([
-      Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
-    ])
-  );
-});
-
-bot.hears('Подать объявление', async (ctx) => {
-  const userId = ctx.chat.id;
-  let user = await UserModel.findOne({ userId });
-  if (!user) {
-    user = new UserModel({ userId, adCount: 0, hasSubscription: false });
-    await user.save();
-  }
-  return ctx.scene.enter('adSubmission');
-});
-
-bot.hears('Помощь', async (ctx) => {
-  await ctx.reply(
-    'По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)',
-    { parse_mode: 'MarkdownV2' }
-  );
-});
-
-// === Обработка кнопки "Объявления в моём городе" ===
-bot.hears('Объявления в моём городе', async (ctx) => {
-  ctx.session.cityAdOffset = 0;
-  return sendCityAds(ctx);
-});
-
-// === Кнопка "Фильтр по категории" ===
-bot.hears('Фильтр по категории', async (ctx) => {
-  ctx.session.cityAdOffset = 0;
-  await ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
-    [Markup.button.callback('🚗 Авто', 'filter_auto')],
-    [Markup.button.callback('📱 Техника', 'filter_tech')],
-    [Markup.button.callback('🏠 Недвижимость', 'filter_real_estate')],
-    [Markup.button.callback('👗 Одежда/Обувь', 'filter_clothing')],
-    [Markup.button.callback('📦 Прочее', 'filter_other')],
-    [Markup.button.callback('🐾 Товары для животных', 'filter_pets')],
-  ]));
-});
-
-bot.action(/filter_(.+)/, async (ctx) => {
-  const selectedCategory = ctx.match[1];
-  ctx.session.selectedCategory = selectedCategory;
-  ctx.session.cityAdOffset = 0;
-  await ctx.answerCbQuery();
-  return sendCityAds(ctx, selectedCategory);
-});
-
-bot.action('more_city_ads', async (ctx) => {
-  ctx.session.cityAdOffset = (ctx.session.cityAdOffset || 0) + 5;
-  const category = ctx.session.selectedCategory || null;
-  await ctx.answerCbQuery();
-  await sendCityAds(ctx, category);
-});
-
+// ✅ Маппинг категории на русский язык
 const categoryMap = {
   auto: '🚗 Авто',
   tech: '📱 Техника',
@@ -143,74 +11,191 @@ const categoryMap = {
   pets: '🐾 Товары для животных',
 };
 
-const sendCityAds = async (ctx, categoryFilter = null) => {
+const CHANNEL_ID = -1002364231507;
+
+const adSubmissionScene = new Scenes.BaseScene('adSubmission');
+
+// === ВХОД В СЦЕНУ ===
+adSubmissionScene.enter(async (ctx) => {
   const userId = ctx.chat.id;
-  const user = await UserModel.findOne({ userId });
 
-  if (!user || !user.location || user.location.city === 'не указано') {
-    return ctx.reply('⚠️ Вы ещё не указали местоположение. Используйте команду /setlocation');
+  let user = await UserModel.findOne({ userId });
+  if (!user) {
+    user = new UserModel({ userId, adCount: 0, hasSubscription: false, location: { country: 'не указано', city: 'не указано' } });
+    await user.save();
   }
 
-  const city = user.location.city;
-  const offset = ctx.session.cityAdOffset || 0;
-  const ads = await AdModel.find({}).sort({ createdAt: -1 });
-  const matchingAds = [];
-
-  for (const ad of ads) {
-    const adUser = await UserModel.findOne({ userId: ad.userId });
-    const sameCity = adUser?.location?.city?.toLowerCase() === city.toLowerCase();
-    const sameCategory = !categoryFilter || ad.category === categoryFilter;
-    if (sameCity && sameCategory) {
-      matchingAds.push({ ad, location: adUser.location });
-    }
-  }
-
-  const page = matchingAds.slice(offset, offset + 5);
-  if (page.length === 0) {
-    return ctx.reply(offset === 0
-      ? `🔍 Объявлений в городе "${city}"${categoryFilter ? ` по категории ${categoryMap[categoryFilter]}` : ''} пока нет.`
-      : `🔚 Больше объявлений нет.`);
-  }
-
-  for (const { ad, location } of page) {
-    const caption = `📂 <b>${categoryMap[ad.category] || ad.category}</b>\n📝 ${ad.description}\n📍 ${location.country}, ${location.city}`;
-    try {
-      if (ad.mediaType === 'photo') {
-        await ctx.telegram.sendPhoto(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else if (ad.mediaType === 'video') {
-        await ctx.telegram.sendVideo(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else if (ad.mediaType === 'document') {
-        await ctx.telegram.sendDocument(ctx.chat.id, ad.mediaFileId, { caption, parse_mode: 'HTML' });
-      } else {
-        await ctx.replyWithHTML(caption);
-      }
-    } catch (error) {
-      console.error('❌ Ошибка при отправке объявления:', error.message);
-    }
-  }
-
-  if (matchingAds.length > offset + 7) {
-    await ctx.reply('⬇️ Показать ещё?', Markup.inlineKeyboard([
-      Markup.button.callback('Показать ещё', 'more_city_ads')
-    ]));
-  }
-};
-
-bot.catch((err) => {
-  console.error('❌ Ошибка в работе бота:', err.message);
+  await ctx.reply(
+    'Выберите категорию для объявления:',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Авто', 'category_auto')],
+      [Markup.button.callback('Техника', 'category_tech')],
+      [Markup.button.callback('Недвижимость', 'category_real_estate')],
+      [Markup.button.callback('Одежда/Обувь', 'category_clothing')],
+      [Markup.button.callback('Прочее', 'category_other')],
+      [Markup.button.callback('Товары для животных', 'category_pets')],
+    ])
+  );
 });
 
-const app = express();
-app.use(bot.webhookCallback('/'));
+// === ВЫБОР КАТЕГОРИИ ===
+adSubmissionScene.action(/category_(.+)/, async (ctx) => {
+  const category = ctx.match[1];
+  ctx.session.category = category;
 
-app.listen(PORT, async () => {
-  console.log(`🌐 HTTP сервер запущен на порту ${PORT}`);
-  try {
-    await bot.telegram.setWebhook(WEBHOOK_URL);
-    console.log(`✅ Webhook установлен: ${WEBHOOK_URL}`);
-  } catch (err) {
-    console.error('❌ Не удалось установить webhook:', err.message);
+  await ctx.reply(
+    `Вы выбрали категорию: ${categoryMap[category] || category}.
+1. Введите описание вашего объявления.
+2. Прикрепите, если нужно, фото, видео или файл.
+3. Оставьте ваши контактные данные (по желанию).
+4. Укажите где вы находитесь (страна, город).`
+  );
+});
+
+// === ФУНКЦИЯ ПОДПИСИ К ОБЪЯВЛЕНИЮ ===
+const generateCaption = (type, category, description, location) => {
+  const now = new Date();
+  const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  const locationLine =
+    location && location.country !== 'не указано'
+      ? `\n📍 <b>Местоположение:</b> ${location.country}, ${location.city}`
+      : '';
+
+  return (
+    `📢 <b>Новое объявление!</b>\n\n` +
+    `📂 <b>Категория:</b> <i>${categoryMap[category] || category}</i>\n` +
+    `📝 <b>Описание:</b> ${description}\n\n` +
+    `📅 ${date}, ${time}` +
+    locationLine
+  );
+};
+
+// === ОБРАБОТКА ТЕКСТА ===
+adSubmissionScene.on('text', async (ctx) => {
+  const userId = ctx.chat.id;
+  const category = ctx.session.category;
+  const description = ctx.message.text;
+
+  if (!category) {
+    await ctx.reply('Ошибка: выберите категорию перед описанием.');
+    return ctx.scene.leave();
   }
+
+  if (!description || description.trim() === '') {
+    await ctx.reply('Описание не может быть пустым.');
+    return;
+  }
+
+  try {
+    const ad = new AdModel({ userId, category, description, createdAt: new Date() });
+    await ad.save();
+
+    const user = await UserModel.findOne({ userId });
+    user.adCount += 1;
+    await user.save();
+
+    const post = generateCaption('text', category, description, user.location);
+    await ctx.telegram.sendMessage(CHANNEL_ID, post, { parse_mode: 'HTML' });
+
+    await ctx.reply('Ваше объявление добавлено!');
+  } catch (error) {
+    console.error('❌ Ошибка при добавлении текста:', error.message);
+    await ctx.reply('Ошибка при сохранении или отправке. Попробуйте позже.');
+  }
+
+  ctx.scene.leave();
+});
+
+// === ОБРАБОТКА ФОТО ===
+adSubmissionScene.on('photo', async (ctx) => {
+  const userId = ctx.chat.id;
+  const category = ctx.session.category;
+  const description = ctx.message.caption || 'Описание отсутствует';
+  const photo = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+
+  if (!category) {
+    await ctx.reply('Ошибка: выберите категорию перед отправкой фото.');
+    return ctx.scene.leave();
+  }
+
+  try {
+    const ad = new AdModel({ userId, category, description, mediaType: 'photo', mediaFileId: photo, createdAt: new Date() });
+    await ad.save();
+
+    const user = await UserModel.findOne({ userId });
+    user.adCount += 1;
+    await user.save();
+
+    const caption = generateCaption('photo', category, description, user.location);
+    await ctx.telegram.sendPhoto(CHANNEL_ID, photo, { caption, parse_mode: 'HTML' });
+
+    await ctx.reply('Объявление добавлено!');
+  } catch (error) {
+    console.error('❌ Ошибка при отправке фото:', error.message);
+    await ctx.reply('Ошибка при публикации фото. Попробуйте позже.');
+  }
+
+  ctx.scene.leave();
+});
+
+// === ОБРАБОТКА ВИДЕО ===
+adSubmissionScene.on('video', async (ctx) => {
+  const userId = ctx.chat.id;
+  const category = ctx.session.category;
+  const video = ctx.message.video.file_id;
+  const description = ctx.message.caption || 'Описание отсутствует';
+
+  if (!category) {
+    await ctx.reply('Выберите категорию перед отправкой видео.');
+    return ctx.scene.leave();
+  }
+
+  try {
+    const user = await UserModel.findOne({ userId });
+    const caption = generateCaption('video', category, description, user.location);
+    await ctx.telegram.sendVideo(CHANNEL_ID, video, { caption, parse_mode: 'HTML' });
+
+    user.adCount += 1;
+    await user.save();
+
+    await ctx.reply('Объявление добавлено!');
+  } catch (error) {
+    console.error('❌ Ошибка при отправке видео:', error.message);
+    await ctx.reply('Ошибка при публикации видео. Попробуйте позже.');
+  }
+
+  ctx.scene.leave();
+});
+
+// === ОБРАБОТКА ДОКУМЕНТА ===
+adSubmissionScene.on('document', async (ctx) => {
+  const userId = ctx.chat.id;
+  const category = ctx.session.category;
+  const doc = ctx.message.document.file_id;
+  const description = ctx.message.caption || 'Описание отсутствует';
+
+  if (!category) {
+    await ctx.reply('Выберите категорию перед отправкой файла.');
+    return ctx.scene.leave();
+  }
+
+  try {
+    const user = await UserModel.findOne({ userId });
+    const caption = generateCaption('document', category, description, user.location);
+    await ctx.telegram.sendDocument(CHANNEL_ID, doc, { caption, parse_mode: 'HTML' });
+
+    user.adCount += 1;
+    await user.save();
+
+    await ctx.reply('Объявление добавлено!');
+  } catch (error) {
+    console.error('❌ Ошибка при отправке документа:', error.message);
+    await ctx.reply('Ошибка при публикации файла. Попробуйте позже.');
+  }
+
+  ctx.scene.leave();
 });
 
 module.exports = adSubmissionScene;
