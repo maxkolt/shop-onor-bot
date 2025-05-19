@@ -227,7 +227,7 @@ async function sendCityAds(ctx, categoryFilter=null) {
   const user = await UserModel.findOne({ userId: ctx.chat.id });
   if (!user||!user.location||user.location.city==='не указано'||user.location.country==='не указано') {
     ctx.session.awaitingLocationInput=true;
-    return ctx.reply('⚠️ Укажите местоположение через /setlocation, например: Россия Москва');
+    return ctx.reply('⚠️ Укажите местоположение через /setlocation, например: Россия, Москва');
   }
   const city = user.location.city.toLowerCase();
   const country = user.location.country.toLowerCase();
