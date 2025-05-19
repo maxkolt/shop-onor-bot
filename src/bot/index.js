@@ -1,3 +1,4 @@
+// === Загрузка переменных окружения ===
 require('dotenv').config();
 
 const express = require('express');
@@ -71,6 +72,7 @@ bot.command('start', async (ctx) => {
 // === Команда /setlocation ===
 bot.command('setlocation', async (ctx) => {
   ctx.session.awaitingLocationInput = true;
+  ctx.session.blockMenuInteraction = true;
   await ctx.reply('📍 Пожалуйста, введите местоположение (Страна, Город):');
 });
 
@@ -96,10 +98,11 @@ bot.on('text', async (ctx, next) => {
       user.location = { country, city };
       await user.save();
       ctx.session.awaitingLocationInput = false;
+      ctx.session.blockMenuInteraction = false;
 
       await ctx.reply(`✅ Локация сохранена: ${country}, ${city}`);
       return ctx.reply(
-        'Добро пожаловать! 🎉 Используйте меню для управления:',
+        '🎉Добро пожаловать! Используйте меню для управления:',
         Markup.keyboard([
           ['Подать объявление'],
           ['Объявления в моём городе', 'Фильтр по категории'],
@@ -114,6 +117,15 @@ bot.on('text', async (ctx, next) => {
 
   return next();
 });
+
+// === Middleware блокировки кнопок во время ожидания локации ===
+bot.use((ctx, next) => {
+  if (ctx.session.awaitingLocationInput) {
+    return ctx.reply('⚠️ Пожалуйста, укажите страну и город, например: Россия, Москва');
+  }
+  return next();
+});
+
 
 bot.hears('Мои объявления', async (ctx) => {
   const userId = ctx.chat.id;
