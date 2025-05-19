@@ -26,7 +26,6 @@ if (!BOT_TOKEN || !MONGO_URI) {
   process.exit(1);
 }
 
-// Подключение MongoDB
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('✅ База данных подключена!'))
   .catch(err => {
@@ -53,7 +52,12 @@ bot.command('start', async (ctx) => {
     await user.save();
   }
 
-  if (!ctx.session.welcomeMessageSent) {
+  if (user.location.city === 'не указано' || user.location.country === 'не указано') {
+    ctx.session.awaitingLocationInput = true;
+    await ctx.reply(
+      '📍 Пожалуйста, введите местоположение: (Страна, Город)'
+    );
+  } else {
     await ctx.reply(
       'Добро пожаловать! 🎉 Используйте меню для управления:',
       Markup.keyboard([
@@ -63,12 +67,6 @@ bot.command('start', async (ctx) => {
         ['Мои объявления']
       ]).resize()
     );
-    ctx.session.welcomeMessageSent = true;
-  }
-
-  if (user.location.city === 'не указано' || user.location.country === 'не указано') {
-    ctx.session.awaitingLocationInput = true;
-    await ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):');
   }
 });
 
@@ -82,12 +80,17 @@ bot.command('setlocation', async (ctx) => {
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const parts = ctx.message.text.trim().split(/[\s,\n]+/).map(p => p.trim()).filter(Boolean);
-    if (parts.length < 2) {
-      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия Москва');
+    if (parts.length < 1) {
+      return ctx.reply('⚠️ Укажите страну или город, например: Россия Москва');
     }
+    let [first, ...rest] = parts;
+    let country = first;
+    let city = rest.join(' ') || 'не указано';
 
-    let [country, ...cityParts] = parts;
-    let city = cityParts.join(' ');
+    if (rest.length === 0) {
+      city = country;
+      country = 'не указано';
+    }
 
     const user = await UserModel.findOne({ userId: ctx.chat.id });
     if (user) {
@@ -95,8 +98,9 @@ bot.on('text', async (ctx, next) => {
       await user.save();
       ctx.session.awaitingLocationInput = false;
 
+      await ctx.reply(`✅ Локация сохранена: ${country}, ${city}`);
       return ctx.reply(
-        `✅ Локация сохранена: ${country}, ${city}`,
+        'Меню доступно ниже:',
         Markup.keyboard([
           ['Подать объявление'],
           ['Объявления в моём городе', 'Фильтр по категории'],
@@ -104,14 +108,13 @@ bot.on('text', async (ctx, next) => {
           ['Мои объявления']
         ]).resize()
       );
+    } else {
+      return ctx.reply('⚠️ Сначала используйте /start');
     }
-
-    return ctx.reply('⚠️ Сначала используйте /start');
   }
 
   return next();
 });
-
 
 bot.hears('Мои объявления', async (ctx) => {
   const userId = ctx.chat.id;
