@@ -1,4 +1,3 @@
-// === Загрузка переменных окружения ===
 require('dotenv').config();
 
 const express = require('express');
@@ -54,9 +53,7 @@ bot.command('start', async (ctx) => {
 
   if (user.location.city === 'не указано' || user.location.country === 'не указано') {
     ctx.session.awaitingLocationInput = true;
-    await ctx.reply(
-      '📍 Пожалуйста, введите местоположение: (Страна, Город)'
-    );
+    await ctx.reply('📍 Пожалуйста, введите местоположение: (Страна, Город)');
   } else {
     await ctx.reply(
       'Добро пожаловать! 🎉 Используйте меню для управления:',
@@ -79,10 +76,11 @@ bot.command('setlocation', async (ctx) => {
 // === Обработчик текста для локации ===
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
-    const parts = ctx.message.text.trim().split(/[\s,\n]+/).map(p => p.trim()).filter(Boolean);
-    if (parts.length < 1) {
+    const parts = ctx.message.text.trim().split(/[,\n]+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 1 || parts.length > 5 || ctx.message.text.startsWith('/')) {
       return ctx.reply('⚠️ Укажите страну или город, например: Россия Москва');
     }
+
     let [first, ...rest] = parts;
     let country = first;
     let city = rest.join(' ') || 'не указано';
