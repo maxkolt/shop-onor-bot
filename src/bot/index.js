@@ -55,6 +55,7 @@ bot.command('start', async (ctx) => {
     ctx.session.awaitingLocationInput = true;
     await ctx.reply('📍 Пожалуйста, введите местоположение: (Страна, Город)');
   } else {
+    ctx.session.awaitingLocationInput = false;
     await ctx.reply(
       'Добро пожаловать! 🎉 Используйте меню для управления:',
       Markup.keyboard([
@@ -70,13 +71,13 @@ bot.command('start', async (ctx) => {
 // === Команда /setlocation ===
 bot.command('setlocation', async (ctx) => {
   ctx.session.awaitingLocationInput = true;
-  await ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):');
+  await ctx.reply('📍 Пожалуйста, введите местоположение (Страна, Город)');
 });
 
 // === Обработчик текста для локации ===
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
-    const parts = ctx.message.text.trim().split(/[,\n]+/).map(p => p.trim()).filter(Boolean);
+    const parts = ctx.message.text.trim().split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length < 1 || parts.length > 5 || ctx.message.text.startsWith('/')) {
       return ctx.reply('⚠️ Укажите страну или город, например: Россия Москва');
     }
@@ -98,7 +99,7 @@ bot.on('text', async (ctx, next) => {
 
       await ctx.reply(`✅ Локация сохранена: ${country}, ${city}`);
       return ctx.reply(
-        'Меню доступно ниже:',
+        'Добро пожаловать! 🎉 Используйте меню для управления:',
         Markup.keyboard([
           ['Подать объявление'],
           ['Объявления в моём городе', 'Фильтр по категории'],
