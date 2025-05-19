@@ -59,7 +59,8 @@ bot.command('start', async (ctx) => {
       Markup.keyboard([
         ['Подать объявление'],
         ['Объявления в моём городе', 'Фильтр по категории'],
-        ['Канал с объявлениями', 'Помощь']
+        ['Канал с объявлениями', 'Помощь'],
+        ['Мои объявления']
       ]).resize()
     );
     ctx.session.welcomeMessageSent = true;
@@ -82,7 +83,7 @@ bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const parts = ctx.message.text.trim().split(/[\s,\n]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length < 2) {
-      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия Москва');
+      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия, Москва');
     }
     // Если пользователь ввёл "город страна", попробуем угадать: если первый похож на город, меняем
     let [country, ...cityParts] = parts;
@@ -99,6 +100,26 @@ bot.on('text', async (ctx, next) => {
     return ctx.reply('⚠️ Сначала используйте /start');
   }
   return next();
+});
+
+bot.hears('Мои объявления', async (ctx) => {
+  const userId = ctx.chat.id;
+  const ads = await AdModel.find({ userId }).sort({ createdAt: -1 });
+
+  if (!ads.length) return ctx.reply('У вас пока нет опубликованных объявлений.');
+
+  for (const ad of ads) {
+    const cap = `📂 <b>${categoryMap[ad.category] || ad.category}</b>\n📝 ${ad.description}`;
+    if (ad.mediaType === 'photo') {
+      await ctx.telegram.sendPhoto(ctx.chat.id, ad.mediaFileId, { caption: cap, parse_mode: 'HTML' });
+    } else if (ad.mediaType === 'video') {
+      await ctx.telegram.sendVideo(ctx.chat.id, ad.mediaFileId, { caption: cap, parse_mode: 'HTML' });
+    } else if (ad.mediaType === 'document') {
+      await ctx.telegram.sendDocument(ctx.chat.id, ad.mediaFileId, { caption: cap, parse_mode: 'HTML' });
+    } else {
+      await ctx.replyWithHTML(cap);
+    }
+  }
 });
 
 // === Другие кнопки ===
