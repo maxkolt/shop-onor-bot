@@ -14,7 +14,6 @@ const categoryMap = {
 };
 const { UserModel, AdModel } = require('./models');
 
-// === Конфигурация ===
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
@@ -52,16 +51,14 @@ bot.command('start', async (ctx) => {
     await user.save();
   }
 
-  // Показываем только текст, если нет локации
   if (user.location.city === 'не указано' || user.location.country === 'не указано') {
     ctx.session.awaitingLocationInput = true;
     return ctx.reply('📍 Пожалуйста, введите местоположение: (Страна, Город)');
   }
 
-  // Показываем меню, если локация уже указана
   ctx.session.awaitingLocationInput = false;
-  return ctx.reply(
-    'Добро пожаловать! 🎉 Используйте меню для управления:',
+  await ctx.reply(
+    '🎉 Добро пожаловать! Используйте меню для управления:',
     Markup.keyboard([
       ['Подать объявление'],
       ['Объявления в моём городе', 'Фильтр по категории'],
@@ -71,11 +68,10 @@ bot.command('start', async (ctx) => {
   );
 });
 
-
 // === Команда /setlocation ===
 bot.command('setlocation', async (ctx) => {
   ctx.session.awaitingLocationInput = true;
-  await ctx.reply('📍 Пожалуйста, введите местоположение (Страна, Город)');
+  await ctx.reply('📍 Пожалуйста, введите местоположение (Страна, Город):');
 });
 
 // === Обработчик текста для локации ===
@@ -83,7 +79,7 @@ bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const parts = ctx.message.text.trim().split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length < 1 || parts.length > 5 || ctx.message.text.startsWith('/')) {
-      return ctx.reply('⚠️ Укажите страну или город, например: Россия Москва');
+      return ctx.reply('⚠️ Укажите страну или город, например: Россия, Москва');
     }
 
     let [first, ...rest] = parts;
