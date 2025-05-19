@@ -83,24 +83,35 @@ bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const parts = ctx.message.text.trim().split(/[\s,\n]+/).map(p => p.trim()).filter(Boolean);
     if (parts.length < 2) {
-      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия, Москва');
+      return ctx.reply('⚠️ Укажите и страну, и город, например: Россия Москва');
     }
-    // Если пользователь ввёл "город страна", попробуем угадать: если первый похож на город, меняем
+
     let [country, ...cityParts] = parts;
     let city = cityParts.join(' ');
-    // Если город состоит из одного слова и country совпадает с известным городом? (упрощённо)
-    // Здесь можно добавить проверку списка городов, но опустим
+
     const user = await UserModel.findOne({ userId: ctx.chat.id });
     if (user) {
       user.location = { country, city };
       await user.save();
       ctx.session.awaitingLocationInput = false;
-      return ctx.reply(`✅ Локация сохранена: ${country}, ${city}`);
+
+      return ctx.reply(
+        `✅ Локация сохранена: ${country}, ${city}`,
+        Markup.keyboard([
+          ['Подать объявление'],
+          ['Объявления в моём городе', 'Фильтр по категории'],
+          ['Канал с объявлениями', 'Помощь'],
+          ['Мои объявления']
+        ]).resize()
+      );
     }
+
     return ctx.reply('⚠️ Сначала используйте /start');
   }
+
   return next();
 });
+
 
 bot.hears('Мои объявления', async (ctx) => {
   const userId = ctx.chat.id;
