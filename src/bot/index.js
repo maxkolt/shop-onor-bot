@@ -1,4 +1,3 @@
-// === Загрузка переменных окружения ===
 require('dotenv').config();
 
 const express = require('express');
@@ -67,7 +66,7 @@ bot.command('start', async ctx => {
   // Если локация не задана — просим ввод и убираем клавиатуру
   if (!user.location.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocationInput = true;
-    return ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):', Markup.removeKeyboard());
+    return ctx.reply('📍 Пожалуйста, укажите местоположение (Страна Город):', Markup.removeKeyboard());
   }
   // Иначе показываем главное меню
   ctx.session.awaitingLocationInput = false;
@@ -77,7 +76,7 @@ bot.command('start', async ctx => {
 // === Команда /setlocation ===
 bot.command('setlocation', async ctx => {
   ctx.session.awaitingLocationInput = true;
-  return ctx.reply('📍 Пожалуйста, введите местоположение (Страна и Город):', Markup.removeKeyboard());
+  return ctx.reply('📍 Пожалуйста, укажите местоположение (Страна Город):', Markup.removeKeyboard());
 });
 
 // === Обработчик текстовых сообщений ===
@@ -267,7 +266,6 @@ async function sendCityAds(ctx, categoryFilter = null) {
     ]));
   }
 }
-
 
 bot.catch(err => console.error('❌ Ошибка:', err));
 const app = express();
