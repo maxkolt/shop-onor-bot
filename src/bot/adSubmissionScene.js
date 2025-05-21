@@ -63,15 +63,12 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = ctx.match[1];
   await ctx.reply(
     `Вы выбрали категорию: ${categoryMap[ctx.session.category]}.
-` +
-    `1. Введите описание объявления.
+1. Введите описание объявления.
 2. Прикрепите фото/видео/файл.
-` +
-    `3. (Опционально) Контакты.
+3. (Опционально) Контакты.
 4. Укажите локацию (страна, город).
 
-` +
-    `Для отмены введите /cancel`
+Для отмены введите /cancel`
   );
 });
 
@@ -80,12 +77,7 @@ const generateCaption = (category, description) => {
   const now = new Date();
   const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `📢 <b>Новое объявление!</b>
-
-📂 <b>Категория:</b> <i>${categoryMap[category]}</i>
-📝 <b>Описание:</b> ${description}
-
-📅 ${date}, ${time}`;
+  return `📢 <b>Новое объявление!</b>\n\n📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n📝 <b>Описание:</b> ${description}\n\n📅 ${date}, ${time}`;
 };
 
 // Обработка текста
@@ -106,10 +98,11 @@ adSubmissionScene.on('text', async (ctx) => {
   if (forbiddenMenuInputs.includes(text)) {
     delete ctx.session.category;
     await ctx.scene.leave();
-    return ctx.telegram.handleUpdate({
-      ...ctx.update,
-      message: { ...ctx.message, text }
-    }, ctx.telegram);
+    await ctx.reply('ℹ️ Вы вышли из режима подачи объявления. Повторите команду, если хотите продолжить.');
+    return ctx.bot.handleUpdate({
+      update_id: ctx.update.update_id,
+      message: ctx.message
+    });
   }
 
   if (!category) return ctx.reply('❗ Сначала выберите категорию.');
