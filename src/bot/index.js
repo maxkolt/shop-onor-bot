@@ -27,19 +27,19 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
 
-// ========== Middleware для ожидания локации ==========
-// Блокируем _только_ обычные текстовые сообщения (не команды), пока ждём локацию
 bot.use((ctx, next) => {
-  if (
-    ctx.updateType === 'message' &&
-    typeof ctx.message.text === 'string' &&
-    !ctx.message.text.startsWith('/') && // не команда
-    ctx.session.awaitingLocation         // ждём локацию
-  ) {
-    return ctx.reply('⚠️ Сначала введите локацию (страна и/или город)');
+  if (ctx.session.awaitingLocation) {
+    // блокируем только команды и кнопки, пока ждём локацию
+    if (ctx.message?.text?.startsWith('/')) {
+      return ctx.reply('⚠️ Сначала введите локацию (страна и/или город)');
+    }
+    if (ctx.callbackQuery) {
+      return ctx.reply('⚠️ Сначала введите локацию (страна и/или город)');
+    }
   }
   return next();
 });
+
 
 // Инициализация сцен
 const stage = new Scenes.Stage([adSubmissionScene]);
