@@ -4,7 +4,8 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const adSubmissionScene = require('./adSubmissionScene');
+// Распаковываем именно сцену, а не весь объект модуля
+const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
 // Карта категорий
@@ -38,7 +39,9 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
-const stage = new Scenes.Stage([adSubmissionScene]);
+
+// Инициализируем Stage с массивом именно экземпляров сцен
+const stage = new Scenes.Stage([ adSubmissionScene ]);
 bot.use(stage.middleware());
 
 // Главное меню
@@ -128,11 +131,17 @@ bot.hears('Мои объявления', async ctx => {
 });
 
 bot.hears('Объявления в моём городе', async ctx => { ctx.session.offset = 0; await sendCity(ctx); });
-bot.hears('Фильтр по категории', ctx => { ctx.session.offset = 0; return ctx.reply('Выберите:', Markup.inlineKeyboard([
-  [Markup.button.callback('🚗 Авто','filter_auto')], [Markup.button.callback('📱 Техника','filter_tech')],
-  [Markup.button.callback('🏠 Недвижимость','filter_real_estate')], [Markup.button.callback('👗 Одежда/Обувь','filter_clothing')],
-  [Markup.button.callback('📦 Прочее','filter_other')], [Markup.button.callback('🐾 Животные','filter_pets')]
-])); });
+bot.hears('Фильтр по категории', ctx => {
+  ctx.session.offset = 0;
+  return ctx.reply('Выберите:', Markup.inlineKeyboard([
+    [Markup.button.callback('🚗 Авто','filter_auto')],
+    [Markup.button.callback('📱 Техника','filter_tech')],
+    [Markup.button.callback('🏠 Недвижимость','filter_real_estate')],
+    [Markup.button.callback('👗 Одежда/Обувь','filter_clothing')],
+    [Markup.button.callback('📦 Прочее','filter_other')],
+    [Markup.button.callback('🐾 Животные','filter_pets')]
+  ]));
+});
 
 bot.action(/filter_(.+)/, async ctx => { ctx.session.category = ctx.match[1]; ctx.session.offset = 0; await ctx.answerCbQuery(); await sendCity(ctx, ctx.session.category); });
 bot.action('more', async ctx => { ctx.session.offset +=5; await ctx.answerCbQuery(); await sendCity(ctx, ctx.session.category); });
@@ -158,7 +167,8 @@ async function sendCity(ctx, cat=null) {
   for (let ad of page) {
     const u=await UserModel.findOne({userId:ad.userId}); const loc=`${u.location.country}, ${u.location.city}`;
     const cap=`📂 <b>${categoryMap[ad.category]}</b>\n📝 ${ad.description}\n📍 ${loc}`;
-    switch(ad.mediaType){ case 'photo': await ctx.telegram.sendPhoto(ctx.chat.id,ad.mediaFileId,{caption:cap,parse_mode:'HTML'}); break;
+    switch(ad.mediaType){
+      case 'photo': await ctx.telegram.sendPhoto(ctx.chat.id,ad.mediaFileId,{caption:cap,parse_mode:'HTML'}); break;
       case 'video': await ctx.telegram.sendVideo(ctx.chat.id,ad.mediaFileId,{caption:cap,parse_mode:'HTML'}); break;
       case 'document': await ctx.telegram.sendDocument(ctx.chat.id,ad.mediaFileId,{caption:cap,parse_mode:'HTML'}); break;
       default: await ctx.replyWithHTML(cap);
@@ -171,6 +181,7 @@ bot.catch(err=>console.error(err));
 
 const app = express();
 app.use(bot.webhookCallback('/'));
-app.listen(PORT,async()=>{
-  console.log('Запущено'); await bot.telegram.setWebhook(WEBHOOK_URL);
+app.listen(PORT, async () => {
+  console.log('Запущено');
+  await bot.telegram.setWebhook(WEBHOOK_URL);
 });

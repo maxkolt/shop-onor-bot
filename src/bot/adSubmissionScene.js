@@ -30,7 +30,6 @@ adSubmissionScene.enter(async (ctx) => {
     await user.save();
   }
 
-
   await ctx.reply(
     'Выберите категорию для объявления:',
     Markup.inlineKeyboard([
