@@ -77,7 +77,12 @@ const generateCaption = (category, description) => {
   const now = new Date();
   const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `📢 <b>Новое объявление!</b>\n\n📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n📝 <b>Описание:</b> ${description}\n\n📅 ${date}, ${time}`;
+  return `📢 <b>Новое объявление!</b>
+
+📂 <b>Категория:</b> <i>${categoryMap[category]}</i>
+📝 <b>Описание:</b> ${description}
+
+📅 ${date}, ${time}`;
 };
 
 // Обработка текста
@@ -98,11 +103,8 @@ adSubmissionScene.on('text', async (ctx) => {
   if (forbiddenMenuInputs.includes(text)) {
     delete ctx.session.category;
     await ctx.scene.leave();
-    await ctx.reply('ℹ️ Вы вышли из режима подачи объявления. Повторите команду, если хотите продолжить.');
-    return ctx.bot.handleUpdate({
-      update_id: ctx.update.update_id,
-      message: ctx.message
-    });
+    await ctx.reply(`🔄 Возвращаемся в главное меню...`);
+    return ctx.telegram.sendMessage(ctx.chat.id, text);
   }
 
   if (!category) return ctx.reply('❗ Сначала выберите категорию.');
