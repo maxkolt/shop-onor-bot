@@ -13,8 +13,34 @@ const categoryMap = {
 
 const CHANNEL_ID = -1002364231507;
 
-// Создаём экземпляр сцены
+// Создаём сцену
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
+
+// === /cancel ===
+adSubmissionScene.command('cancel', async (ctx) => {
+  await ctx.reply(
+    '❌ Подача объявления отменена. Возвращаемся в меню.',
+    Markup.keyboard([
+      ['Подать объявление'],
+      ['Объявления в моём городе', 'Фильтр по категории'],
+      ['Канал с объявлениями', 'Помощь'],
+      ['Мои объявления']
+    ]).resize()
+  );
+  delete ctx.session.category;
+  return ctx.scene.leave();
+});
+
+// ===========================
+// Блокировка любых команд
+// ===========================
+adSubmissionScene.use((ctx, next) => {
+  const txt = ctx.message?.text || '';
+  if (txt.startsWith('/')) {
+    return ctx.reply('⛔ Команды недоступны во время подачи объявления. Введите описание или используйте кнопки.');
+  }
+  return next();
+});
 
 // === ВХОД В СЦЕНУ ===
 adSubmissionScene.enter(async (ctx) => {
@@ -22,14 +48,11 @@ adSubmissionScene.enter(async (ctx) => {
   let user = await UserModel.findOne({ userId });
   if (!user) {
     user = new UserModel({
-      userId,
-      adCount: 0,
-      hasSubscription: false,
+      userId, adCount: 0, hasSubscription: false,
       location: { country: 'не указано', city: 'не указано' },
     });
     await user.save();
   }
-
   await ctx.reply(
     'Выберите категорию для объявления:',
     Markup.inlineKeyboard([
@@ -45,26 +68,25 @@ adSubmissionScene.enter(async (ctx) => {
 
 // === ВЫБОР КАТЕГОРИИ ===
 adSubmissionScene.action(/category_(.+)/, async (ctx) => {
-  const category = ctx.match[1];
-  ctx.session.category = category;
+  ctx.session.category = ctx.match[1];
   await ctx.reply(
-    `Вы выбрали категорию: ${categoryMap[category] || category}.\n` +
-    `1. Введите описание вашего объявления.\n` +
-    `2. Прикрепите, если нужно, фото, видео или файл.\n` +
-    `3. Оставьте ваши контактные данные (по желанию).\n` +
-    `4. Укажите где вы находитесь (страна, город).`
+    `Вы выбрали категорию: ${categoryMap[ctx.session.category]}.\n` +
+    `1. Введите описание объявления.\n` +
+    `2. Прикрепите фото/видео/файл.\n` +
+    `3. (Опционально) Контакты.\n` +
+    `4. Укажите локацию (страна, город).\n\n` +
+    `Для отмены введите /cancel`
   );
 });
 
-// === ФУНКЦИЯ ПОДПИСИ К ОБЪЯВЛЕНИЮ ===
-const generateCaption = (type, category, description) => {
-  const now = new Date();
+// === ФУНКЦИЯ ПОДПИСИ ===
+const generateCaption = (category, description) => {
+  const now  = new Date();
   const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-
   return (
     `📢 <b>Новое объявление!</b>\n\n` +
-    `📂 <b>Категория:</b> <i>${categoryMap[category] || category}</i>\n` +
+    `📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n` +
     `📝 <b>Описание:</b> ${description}\n\n` +
     `📅 ${date}, ${time}`
   );
@@ -72,139 +94,63 @@ const generateCaption = (type, category, description) => {
 
 // === ОБРАБОТКА ТЕКСТА ===
 adSubmissionScene.on('text', async (ctx) => {
-  const text = ctx.message.text;
-
-  // Не позволяем прокидывать команды как описание
-  if (text.startsWith('/')) {
-    return ctx.reply('⛔ Похоже на команду. Пожалуйста, введите описание объявления без “/”');
-  }
-
-  const userId = ctx.chat.id;
+  const text = ctx.message.text.trim();
+  const userId   = ctx.chat.id;
   const category = ctx.session.category;
-  const description = text.trim();
 
   if (!category) {
-    await ctx.reply('Ошибка: выберите категорию перед описанием.');
+    await ctx.reply('❗ Сначала выберите категорию.');
     return ctx.scene.leave();
   }
-
-  if (!description) {
-    await ctx.reply('Описание не может быть пустым.');
-    return;
+  if (!text) {
+    return ctx.reply('Описание не может быть пустым.');
   }
 
   try {
-    const ad = new AdModel({ userId, category, description, createdAt: new Date() });
-    await ad.save();
-
+    await new AdModel({ userId, category, description: text, createdAt: new Date() }).save();
     const user = await UserModel.findOne({ userId });
-    user.adCount += 1;
+    user.adCount++;
     await user.save();
 
-    const post = generateCaption('text', category, description);
-    await ctx.telegram.sendMessage(CHANNEL_ID, post, { parse_mode: 'HTML' });
-
-    await ctx.reply('Ваше объявление добавлено!');
-  } catch (error) {
-    console.error('❌ Ошибка при добавлении текста:', error.message);
-    await ctx.reply('Ошибка при сохранении или отправке. Попробуйте позже.');
+    await ctx.telegram.sendMessage(CHANNEL_ID, generateCaption(category, text), { parse_mode: 'HTML' });
+    await ctx.reply('✅ Объявление добавлено!');
+  } catch (err) {
+    console.error(err);
+    await ctx.reply('❌ Не удалось добавить объявление. Попробуйте позже.');
   }
 
+  delete ctx.session.category;
   ctx.scene.leave();
 });
 
-// === ОБРАБОТКА ФОТО ===
-adSubmissionScene.on('photo', async (ctx) => {
-  const userId = ctx.chat.id;
+// === ОБРАБОТКА МЕДИА ===
+async function handleMedia(ctx, type, fileId) {
+  const userId   = ctx.chat.id;
   const category = ctx.session.category;
-  const description = ctx.message.caption || 'Описание отсутствует';
-  const photo = ctx.message.photo.pop().file_id;
-
   if (!category) {
-    await ctx.reply('Ошибка: выберите категорию перед отправкой фото.');
+    await ctx.reply('❗ Сначала выберите категорию.');
     return ctx.scene.leave();
   }
+  const description = ctx.message.caption?.trim() || 'Описание отсутствует';
+  await new AdModel({ userId, category, description, mediaType: type, mediaFileId: fileId, createdAt: new Date() }).save();
+  const user = await UserModel.findOne({ userId });
+  user.adCount++;
+  await user.save();
 
-  try {
-    const ad = new AdModel({ userId, category, description, mediaType: 'photo', mediaFileId: photo, createdAt: new Date() });
-    await ad.save();
+  const sendMap = {
+    photo: ()    => ctx.telegram.sendPhoto(   CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    video: ()    => ctx.telegram.sendVideo(   CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    document: () => ctx.telegram.sendDocument(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+  };
+  await sendMap[type]();
 
-    const user = await UserModel.findOne({ userId });
-    user.adCount += 1;
-    await user.save();
-
-    const caption = generateCaption('photo', category, description);
-    await ctx.telegram.sendPhoto(CHANNEL_ID, photo, { caption, parse_mode: 'HTML' });
-
-    await ctx.reply('Объявление добавлено!');
-  } catch (error) {
-    console.error('❌ Ошибка при отправке фото:', error.message);
-    await ctx.reply('Ошибка при публикации фото. Попробуйте позже.');
-  }
-
+  await ctx.reply('✅ Объявление добавлено!');
+  delete ctx.session.category;
   ctx.scene.leave();
-});
+}
 
-// === ОБРАБОТКА ВИДЕО ===
-adSubmissionScene.on('video', async (ctx) => {
-  const category = ctx.session.category;
-  const video = ctx.message.video.file_id;
-  const description = ctx.message.caption || 'Описание отсутствует';
-
-  if (!category) {
-    await ctx.reply('Ошибка: выберите категорию перед отправкой видео.');
-    return ctx.scene.leave();
-  }
-
-  try {
-    const ad = new AdModel({ userId: ctx.chat.id, category, description, mediaType: 'video', mediaFileId: video, createdAt: new Date() });
-    await ad.save();
-
-    const user = await UserModel.findOne({ userId: ctx.chat.id });
-    user.adCount += 1;
-    await user.save();
-
-    const caption = generateCaption('video', category, description);
-    await ctx.telegram.sendVideo(CHANNEL_ID, video, { caption, parse_mode: 'HTML' });
-
-    await ctx.reply('Объявление добавлено!');
-  } catch (error) {
-    console.error('❌ Ошибка при отправке видео:', error.message);
-    await ctx.reply('Ошибка при публикации видео. Попробуйте позже.');
-  }
-
-  ctx.scene.leave();
-});
-
-// === ОБРАБОТКА ДОКУМЕНТА ===
-adSubmissionScene.on('document', async (ctx) => {
-  const category = ctx.session.category;
-  const doc = ctx.message.document.file_id;
-  const description = ctx.message.caption || 'Описание отсутствует';
-
-  if (!category) {
-    await ctx.reply('Ошибка: выберите категорию перед отправкой файла.');
-    return ctx.scene.leave();
-  }
-
-  try {
-    const ad = new AdModel({ userId: ctx.chat.id, category, description, mediaType: 'document', mediaFileId: doc, createdAt: new Date() });
-    await ad.save();
-
-    const user = await UserModel.findOne({ userId: ctx.chat.id });
-    user.adCount += 1;
-    await user.save();
-
-    const caption = generateCaption('document', category, description);
-    await ctx.telegram.sendDocument(CHANNEL_ID, doc, { caption, parse_mode: 'HTML' });
-
-    await ctx.reply('Объявление добавлено!');
-  } catch (error) {
-    console.error('❌ Ошибка при отправке документа:', error.message);
-    await ctx.reply('Ошибка при публикации файла. Попробуйте позже.');
-  }
-
-  ctx.scene.leave();
-});
+adSubmissionScene.on('photo',    ctx => handleMedia(ctx, 'photo',    ctx.message.photo.slice(-1)[0].file_id));
+adSubmissionScene.on('video',    ctx => handleMedia(ctx, 'video',    ctx.message.video.file_id));
+adSubmissionScene.on('document', ctx => handleMedia(ctx, 'document', ctx.message.document.file_id));
 
 module.exports = { adSubmissionScene };
