@@ -46,9 +46,12 @@ adSubmissionScene.use(async (ctx, next) => {
   if (text && menuButtons.includes(text) && !ctx.session.category) {
     // отменяем ввод объявления
     await ctx.reply('❌ Вы отменили подачу объявления.', mainMenuKeyboard);
-    ctx.scene.leave();
-    // передаём дальше для обработки в основном ботe
-    return next();
+    await ctx.scene.leave();
+    // передаём обратно управление боту для обработки нажатия кнопки
+    return ctx.telegram.handleUpdate({
+      ...ctx.update,
+      message: { ...ctx.message, text }
+    }, ctx.telegram);
   }
   return next();
 });
