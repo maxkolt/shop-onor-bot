@@ -94,6 +94,24 @@ adSubmissionScene.on('text', async (ctx) => {
   const userId = ctx.chat.id;
   const category = ctx.session.category;
 
+  const forbiddenMenuInputs = [
+    'Объявления в моём городе',
+    'Фильтр по категории',
+    'Канал с объявлениями',
+    'Помощь',
+    'Мои объявления',
+    'Подать объявление'
+  ];
+
+  if (forbiddenMenuInputs.includes(text)) {
+    delete ctx.session.category;
+    await ctx.scene.leave();
+    return ctx.telegram.handleUpdate({
+      ...ctx.update,
+      message: { ...ctx.message, text }
+    }, ctx.telegram);
+  }
+
   if (!category) return ctx.reply('❗ Сначала выберите категорию.');
   if (!text || text.startsWith('/')) return ctx.reply('❌ Описание не может быть пустым или начинаться с "/"');
 
