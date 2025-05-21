@@ -1,39 +1,31 @@
 const { Scenes, Markup } = require('telegraf');
 const { UserModel, AdModel } = require('./models');
 
-// ✅ Маппинг категории на русский язык
 const categoryMap = {
   auto: '🚗 Авто',
   tech: '📱 Техника',
   real_estate: '🏠 Недвижимость',
   clothing: '👗 Одежда/Обувь',
   other: '📦 Прочее',
-  pets: '🐾 Товары для животных',
+  pets: '🐾 Товары для животных'
 };
 
 const CHANNEL_ID = -1002364231507;
-
-// Создаём сцену
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 
-// === /cancel ===
+// /cancel
 adSubmissionScene.command('cancel', async (ctx) => {
-  await ctx.reply(
-    '❌ Подача объявления отменена. Возвращаемся в меню.',
-    Markup.keyboard([
-      ['Подать объявление'],
-      ['Объявления в моём городе', 'Фильтр по категории'],
-      ['Канал с объявлениями', 'Помощь'],
-      ['Мои объявления']
-    ]).resize()
-  );
   delete ctx.session.category;
+  await ctx.reply('❌ Подача объявления отменена. Возвращаемся в меню.', Markup.keyboard([
+    ['Подать объявление'],
+    ['Объявления в моём городе', 'Фильтр по категории'],
+    ['Канал с объявлениями', 'Помощь'],
+    ['Мои объявления']
+  ]).resize());
   return ctx.scene.leave();
 });
 
-// ===========================
-// Блокировка любых команд
-// ===========================
+// Блокировка команд
 adSubmissionScene.use((ctx, next) => {
   const txt = ctx.message?.text || '';
   if (txt.startsWith('/')) {
@@ -42,69 +34,68 @@ adSubmissionScene.use((ctx, next) => {
   return next();
 });
 
-// === ВХОД В СЦЕНУ ===
+// Вход в сцену
 adSubmissionScene.enter(async (ctx) => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
   if (!user) {
     user = new UserModel({
-      userId, adCount: 0, hasSubscription: false,
-      location: { country: 'не указано', city: 'не указано' },
+      userId,
+      adCount: 0,
+      hasSubscription: false,
+      location: { country: 'не указано', city: 'не указано' }
     });
     await user.save();
   }
-  await ctx.reply(
-    'Выберите категорию для объявления:',
-    Markup.inlineKeyboard([
-      [Markup.button.callback('Авто', 'category_auto')],
-      [Markup.button.callback('Техника', 'category_tech')],
-      [Markup.button.callback('Недвижимость', 'category_real_estate')],
-      [Markup.button.callback('Одежда/Обувь', 'category_clothing')],
-      [Markup.button.callback('Прочее', 'category_other')],
-      [Markup.button.callback('Товары для животных', 'category_pets')],
-    ])
-  );
+
+  await ctx.reply('Выберите категорию для объявления:', Markup.inlineKeyboard([
+    [Markup.button.callback('Авто', 'category_auto')],
+    [Markup.button.callback('Техника', 'category_tech')],
+    [Markup.button.callback('Недвижимость', 'category_real_estate')],
+    [Markup.button.callback('Одежда/Обувь', 'category_clothing')],
+    [Markup.button.callback('Прочее', 'category_other')],
+    [Markup.button.callback('Товары для животных', 'category_pets')]
+  ]));
 });
 
-// === ВЫБОР КАТЕГОРИИ ===
+// Выбор категории
 adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = ctx.match[1];
   await ctx.reply(
-    `Вы выбрали категорию: ${categoryMap[ctx.session.category]}.\n` +
-    `1. Введите описание объявления.\n` +
-    `2. Прикрепите фото/видео/файл.\n` +
-    `3. (Опционально) Контакты.\n` +
-    `4. Укажите локацию (страна, город).\n\n` +
+    `Вы выбрали категорию: ${categoryMap[ctx.session.category]}.
+` +
+    `1. Введите описание объявления.
+2. Прикрепите фото/видео/файл.
+` +
+    `3. (Опционально) Контакты.
+4. Укажите локацию (страна, город).
+
+` +
     `Для отмены введите /cancel`
   );
 });
 
-// === ФУНКЦИЯ ПОДПИСИ ===
+// Генерация подписи
 const generateCaption = (category, description) => {
-  const now  = new Date();
+  const now = new Date();
   const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return (
-    `📢 <b>Новое объявление!</b>\n\n` +
-    `📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n` +
-    `📝 <b>Описание:</b> ${description}\n\n` +
-    `📅 ${date}, ${time}`
-  );
+  return `📢 <b>Новое объявление!</b>
+
+📂 <b>Категория:</b> <i>${categoryMap[category]}</i>
+📝 <b>Описание:</b> ${description}
+
+📅 ${date}, ${time}`;
 };
 
-// === ОБРАБОТКА ТЕКСТА ===
+// Обработка текста
 adSubmissionScene.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
-  const userId   = ctx.chat.id;
+  const userId = ctx.chat.id;
   const category = ctx.session.category;
 
-  if (!category) {
-    await ctx.reply('❗ Сначала выберите категорию.');
-    return ctx.scene.leave();
-  }
-  if (!text) {
-    return ctx.reply('Описание не может быть пустым.');
-  }
+  if (!category) return ctx.reply('❗ Сначала выберите категорию.');
+  if (!text || text.startsWith('/')) return ctx.reply('❌ Описание не может быть пустым или начинаться с "/"');
 
   try {
     await new AdModel({ userId, category, description: text, createdAt: new Date() }).save();
@@ -123,14 +114,16 @@ adSubmissionScene.on('text', async (ctx) => {
   ctx.scene.leave();
 });
 
-// === ОБРАБОТКА МЕДИА ===
+// Обработка медиа
 async function handleMedia(ctx, type, fileId) {
-  const userId   = ctx.chat.id;
+  const userId = ctx.chat.id;
   const category = ctx.session.category;
+
   if (!category) {
     await ctx.reply('❗ Сначала выберите категорию.');
     return ctx.scene.leave();
   }
+
   const description = ctx.message.caption?.trim() || 'Описание отсутствует';
   await new AdModel({ userId, category, description, mediaType: type, mediaFileId: fileId, createdAt: new Date() }).save();
   const user = await UserModel.findOne({ userId });
@@ -138,19 +131,19 @@ async function handleMedia(ctx, type, fileId) {
   await user.save();
 
   const sendMap = {
-    photo: ()    => ctx.telegram.sendPhoto(   CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
-    video: ()    => ctx.telegram.sendVideo(   CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
-    document: () => ctx.telegram.sendDocument(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    photo: () => ctx.telegram.sendPhoto(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    video: () => ctx.telegram.sendVideo(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    document: () => ctx.telegram.sendDocument(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' })
   };
-  await sendMap[type]();
 
+  await sendMap[type]();
   await ctx.reply('✅ Объявление добавлено!');
   delete ctx.session.category;
   ctx.scene.leave();
 }
 
-adSubmissionScene.on('photo',    ctx => handleMedia(ctx, 'photo',    ctx.message.photo.slice(-1)[0].file_id));
-adSubmissionScene.on('video',    ctx => handleMedia(ctx, 'video',    ctx.message.video.file_id));
+adSubmissionScene.on('photo', ctx => handleMedia(ctx, 'photo', ctx.message.photo.slice(-1)[0].file_id));
+adSubmissionScene.on('video', ctx => handleMedia(ctx, 'video', ctx.message.video.file_id));
 adSubmissionScene.on('document', ctx => handleMedia(ctx, 'document', ctx.message.document.file_id));
 
 module.exports = { adSubmissionScene };
