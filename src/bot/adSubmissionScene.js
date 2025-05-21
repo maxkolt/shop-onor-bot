@@ -32,7 +32,7 @@ adSubmissionScene.command('cancel', async (ctx) => {
   return ctx.scene.leave();
 });
 
-// Если нажаты кнопки меню до выбора категории, отменяем
+// Переход по любой кнопке меню до выбора категории
 adSubmissionScene.use(async (ctx, next) => {
   const text = ctx.message?.text;
   const menuButtons = [
@@ -43,11 +43,11 @@ adSubmissionScene.use(async (ctx, next) => {
     'Помощь',
     'Мои объявления'
   ];
-  if (text && menuButtons.includes(text)) {
-    delete ctx.session.category;
+  if (text && menuButtons.includes(text) && !ctx.session.category) {
+    // отменяем ввод объявления
     await ctx.reply('❌ Вы отменили подачу объявления.', mainMenuKeyboard);
-    await ctx.scene.leave();
-    // дальше обработать нажатие кнопки как обычно
+    ctx.scene.leave();
+    // передаём дальше для обработки в основном ботe
     return next();
   }
   return next();
@@ -56,7 +56,7 @@ adSubmissionScene.use(async (ctx, next) => {
 // Блокировка команд внутри сцены
 adSubmissionScene.use((ctx, next) => {
   const txt = ctx.message?.text || '';
-  if (txt.startsWith('/')) {
+  if (txt.startsWith('/') && txt !== '/cancel') {
     return ctx.reply('⛔ Команды недоступны во время подачи объявления. Введите описание или воспользуйтесь кнопками.');
   }
   return next();
@@ -64,6 +64,7 @@ adSubmissionScene.use((ctx, next) => {
 
 // Вход в сцену: выбор категории
 adSubmissionScene.enter(async (ctx) => {
+  delete ctx.session.category;
   await ctx.reply(
     'Выберите категорию для подачи объявления:',
     Markup.inlineKeyboard([
@@ -109,12 +110,8 @@ adSubmissionScene.on('text', async (ctx) => {
   const userId = ctx.chat.id;
   const category = ctx.session.category;
 
-  if (!category) {
-    return ctx.reply('❗ Сначала выберите категорию.');
-  }
-  if (!text || text.startsWith('/')) {
-    return ctx.reply('❌ Описание не может быть пустым или начинаться с "/"');
-  }
+  if (!category) return ctx.reply('❗ Сначала выберите категорию.');
+  if (!text || text.startsWith('/')) return ctx.reply('❌ Описание не может быть пустым или начинаться с "/"');
 
   try {
     await new AdModel({ userId, category, description: text, createdAt: new Date() }).save();
