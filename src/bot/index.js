@@ -1,58 +1,48 @@
-// === Загрузка переменных окружения ===
 require('dotenv').config();
-
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
-// Карта категорий
-const categoryMap = {
-  auto: '🚗 Авто',
-  tech: '📱 Техника',
-  real_estate: '🏠 Недвижимость',
-  clothing: '👗 Одежда/Обувь',
-  other: '📦 Прочее',
-  pets: '🐾 Товары для животных',
-};
-
-// === Конфигурация ===
+// Конфигурация
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
-const WEBHOOK_URL = 'https://boroxlo-bot-tg.onrender.com';
+const WEBHOOK_URL = process.env.WEBHOOK_URL; // Укажите в .env
 
-if (!BOT_TOKEN || !MONGO_URI) {
-  console.error('❌ BOT_TOKEN или MONGO_URI не установлены в .env');
+if (!BOT_TOKEN || !MONGO_URI || !WEBHOOK_URL) {
+  console.error('❌ Отсутствуют BOT_TOKEN, MONGO_URI или WEBHOOK_URL в .env');
   process.exit(1);
 }
 
 // Подключение к MongoDB
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ База данных подключена!'))
+  .then(() => console.log('✅ MongoDB подключена'))
   .catch(err => {
-    console.error('❌ Ошибка подключения к базе данных:', err.message);
+    console.error('❌ Ошибка подключения к MongoDB:', err.message);
     process.exit(1);
   });
 
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
 
-// ========== Новый блокирующий middleware ==========
-// Блокируем любые команды и нажатия клавиатуры,
-// пока пользователь не введёт локацию, кроме /setlocation
+// ========== Middleware для ожидания локации ==========
+// Блокируем _только_ обычные текстовые сообщения (не команды), пока ждём локацию
 bot.use((ctx, next) => {
-  const text = ctx.message?.text;
-  const cmd = text?.split(' ')[0];
-  if (ctx.session.awaitingLocation && cmd !== '/setlocation') {
+  if (
+    ctx.updateType === 'message' &&
+    typeof ctx.message.text === 'string' &&
+    !ctx.message.text.startsWith('/') && // не команда
+    ctx.session.awaitingLocation         // ждём локацию
+  ) {
     return ctx.reply('⚠️ Сначала введите локацию (страна и/или город)');
   }
   return next();
 });
 
-// Инициализируем сцены
-const stage = new Scenes.Stage([ adSubmissionScene ]);
+// Инициализация сцен
+const stage = new Scenes.Stage([adSubmissionScene]);
 bot.use(stage.middleware());
 
 // Главное меню
@@ -70,11 +60,16 @@ bot.command('start', async ctx => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
   if (!user) {
-    user = new UserModel({ userId, adCount: 0, hasSubscription: false, location: { country: 'не указано', city: 'не указано' } });
+    user = new UserModel({
+      userId,
+      adCount: 0,
+      hasSubscription: false,
+      location: { country: 'не указано', city: 'не указано' }
+    });
     await user.save();
   }
 
-  // Если локация не задана в БД, запросим её
+  // Если локация не задана в базе — запрашиваем
   if (!user.location.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocation = true;
     return ctx.reply('📍 Введите локацию (страна и/или город):', Markup.removeKeyboard());
@@ -91,19 +86,16 @@ bot.command('setlocation', ctx => {
   return ctx.reply('📍 Введите локацию (страна и/или город):', Markup.removeKeyboard());
 });
 
-// Обработка вводимой локации
+// Обработка вводимой локации (plain text)
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocation) {
     const txt = ctx.message.text.trim();
-    if (txt.startsWith('/')) return; // игнорируем другие команды
-    const parts = txt.split(/[,\.\s]+/).filter(Boolean);
-    let country = 'не указано', city = 'не указано';
-    if (parts.length === 1) {
-      city = parts[0];
-    } else {
-      country = parts[0];
-      city = parts.slice(1).join(' ');
-    }
+    if (txt.startsWith('/')) return; // пропускаем команды
+
+    const parts = txt.split(/[.,\s]+/).filter(Boolean);
+    const country = parts.length > 1 ? parts[0] : 'не указано';
+    const city    = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+
     const user = await UserModel.findOne({ userId: ctx.chat.id });
     if (user) {
       user.location = { country, city };
