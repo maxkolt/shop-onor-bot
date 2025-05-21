@@ -37,7 +37,7 @@ bot.use(session());
 bot.use((ctx, next) => {
   if (ctx.session?.awaitingLocationInput) {
     const t = ctx.message?.text;
-    const allow = ['/cancel','/start','/setlocation,'];
+    const allow = ['/cancel','/start','/setlocation, Канал с объявлениями, Помощь'];
     if (allow.includes(t)) return next();
     if (t?.startsWith('/')) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
     if (ctx.callbackQuery) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
