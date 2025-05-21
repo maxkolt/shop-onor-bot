@@ -4,7 +4,6 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-// Распаковываем именно сцену, а не весь объект модуля
 const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
@@ -40,7 +39,19 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
 
-// Инициализируем Stage с массивом именно экземпляров сцен
+// ========== Новый блокирующий middleware ==========
+// Блокируем любые команды и нажатия клавиатуры,
+// пока пользователь не введёт локацию, кроме /setlocation
+bot.use((ctx, next) => {
+  const text = ctx.message?.text;
+  const cmd = text?.split(' ')[0];
+  if (ctx.session.awaitingLocation && cmd !== '/setlocation') {
+    return ctx.reply('⚠️ Сначала введите локацию (страна и/или город)');
+  }
+  return next();
+});
+
+// Инициализируем сцены
 const stage = new Scenes.Stage([ adSubmissionScene ]);
 bot.use(stage.middleware());
 
@@ -62,10 +73,14 @@ bot.command('start', async ctx => {
     user = new UserModel({ userId, adCount: 0, hasSubscription: false, location: { country: 'не указано', city: 'не указано' } });
     await user.save();
   }
+
+  // Если локация не задана в БД, запросим её
   if (!user.location.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocation = true;
     return ctx.reply('📍 Введите локацию (страна и/или город):', Markup.removeKeyboard());
   }
+
+  // Локация уже есть — показываем меню
   ctx.session.awaitingLocation = false;
   return ctx.reply('🎉 Добро пожаловать! Используйте меню:', mainMenu());
 });
@@ -76,11 +91,11 @@ bot.command('setlocation', ctx => {
   return ctx.reply('📍 Введите локацию (страна и/или город):', Markup.removeKeyboard());
 });
 
-// Текстовые сообщения — локация или передать дальше
+// Обработка вводимой локации
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocation) {
     const txt = ctx.message.text.trim();
-    if (txt.startsWith('/')) return; // команды
+    if (txt.startsWith('/')) return; // игнорируем другие команды
     const parts = txt.split(/[,\.\s]+/).filter(Boolean);
     let country = 'не указано', city = 'не указано';
     if (parts.length === 1) {
@@ -94,18 +109,10 @@ bot.on('text', async (ctx, next) => {
       user.location = { country, city };
       await user.save();
       ctx.session.awaitingLocation = false;
-      await ctx.reply(`✅ Локация: ${country}, ${city}`);
+      await ctx.reply(`✅ Локация установлена: ${country}, ${city}`);
       return ctx.reply('🎉 Меню:', mainMenu());
     }
     return ctx.reply('⚠️ Сначала /start');
-  }
-  return next();
-});
-
-// Middleware блокировки меню, если ждем локацию
-bot.use((ctx, next) => {
-  if (ctx.session.awaitingLocation && ctx.updateType === 'message') {
-    return ctx.reply('⚠️ Укажите локацию через ввод текста или /setlocation');
   }
   return next();
 });
