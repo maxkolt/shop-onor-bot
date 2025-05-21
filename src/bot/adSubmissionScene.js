@@ -16,20 +16,29 @@ const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 // /cancel
 adSubmissionScene.command('cancel', async (ctx) => {
   delete ctx.session.category;
-  await ctx.reply('❌ Подача объявления отменена. Возвращаемся в меню.', Markup.keyboard([
-    ['Подать объявление'],
-    ['Объявления в моём городе', 'Фильтр по категории'],
-    ['Канал с объявлениями', 'Помощь'],
-    ['Мои объявления']
-  ]).resize());
+  await ctx.reply(
+    '❌ Подача объявления отменена.',
+    mainMenuKeyboard
+  );
   return ctx.scene.leave();
 });
 
-// Блокировка команд
-adSubmissionScene.use((ctx, next) => {
-  const txt = ctx.message?.text || '';
-  if (txt.startsWith('/')) {
-    return ctx.reply('⛔ Команды недоступны во время подачи объявления. Используйте кнопки.');
+// Обработка нажатия других основных кнопок внутри сцены
+adSubmissionScene.use(async (ctx, next) => {
+  const text = ctx.message?.text;
+  const menuButtons = [
+    'Подать объявление',
+    'Объявления в моём городе',
+    'Фильтр по категории',
+    'Канал с объявлениями',
+    'Помощь',
+    'Мои объявления'
+  ];
+  if (text && menuButtons.includes(text)) {
+    delete ctx.session.category;
+    await ctx.reply('❌ Вы отменили подачу объявления.', mainMenuKeyboard);
+    await ctx.scene.leave();
+    return next();
   }
   return next();
 });
