@@ -29,19 +29,24 @@ bot.use(session());
 bot.use((ctx, next) => {
   if (ctx.session.awaitingLocation) {
     const messageText = ctx.message?.text;
-    const isCancelCommand = messageText && messageText.startsWith('/cancel');
+    const allowed = ['/cancel', '/start', '/setlocation'];
 
-    if (isCancelCommand) return next();
+    if (allowed.includes(messageText)) {
+      return next(); // разрешаем эти команды
+    }
 
     if (messageText?.startsWith('/')) {
       return ctx.reply('⚠️ Сначала введите локацию (страна и/или город), или /cancel для отмены.');
     }
+
     if (ctx.callbackQuery) {
       return ctx.reply('⚠️ Сначала введите локацию (страна и/или город), или /cancel для отмены.');
     }
   }
+
   return next();
 });
+
 
 // Сцены
 const stage = new Scenes.Stage([adSubmissionScene]);
