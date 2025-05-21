@@ -103,7 +103,7 @@ adSubmissionScene.on('text', async (ctx) => {
   if (forbiddenMenuInputs.includes(text)) {
     delete ctx.session.category;
     await ctx.scene.leave();
-    // Показываем клавиатуру выбора категории из скрина
+    // Показываем клавиатуру выбора категории
     return ctx.reply(
       'Выберите категорию для подачи объявления:',
       Markup.inlineKeyboard([

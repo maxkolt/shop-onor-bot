@@ -37,7 +37,7 @@ bot.use(session());
 bot.use((ctx, next) => {
   if (ctx.session?.awaitingLocationInput) {
     const t = ctx.message?.text;
-    const allow = ['/cancel','/start','/setlocation'];
+    const allow = ['/cancel','/start','/setlocation,'];
     if (allow.includes(t)) return next();
     if (t?.startsWith('/')) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
     if (ctx.callbackQuery) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
@@ -127,6 +127,25 @@ bot.hears('Фильтр по категории', ctx=>{
     [Markup.button.callback('📦 Прочее','filter_other')],
     [Markup.button.callback('🐾 Товары','filter_pets')]
   ]));
+});
+
+
+//  "Канал с объявлениями"
+bot.hears('Канал с объявлениями', async (ctx) => {
+  await ctx.reply(
+    'Сюда 👇',
+    Markup.inlineKeyboard([
+      Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
+    ])
+  );
+});
+
+// Обработка кнопки "Помощь"
+bot.hears('Помощь', async (ctx) => {
+  await ctx.reply(
+    'По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)',
+    { parse_mode: 'MarkdownV2' }
+  );
 });
 
 // callback фильтра
