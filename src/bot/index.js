@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const adSubmissionScene = require('./adSubmissionScene');
+const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
 const categoryMap = {
