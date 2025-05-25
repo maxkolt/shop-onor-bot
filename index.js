@@ -197,6 +197,7 @@ async function connectMongo() {
 
 // 📦 Экспорт обработчика для Yandex Cloud Functions
 module.exports.handler = async function(event, context) {
+  console.log('📥 Пришёл запрос:', event); // добавь это для логов
   try {
     await connectMongo();
 
