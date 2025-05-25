@@ -197,21 +197,20 @@ async function connectMongo() {
 
 // 📦 Экспорт обработчика для Yandex Cloud Functions
 module.exports.handler = async function(event, context) {
-  console.log('📥 Пришёл запрос:', event); // добавь это для логов
-  try {
-    await connectMongo();
+  console.log('Запрос от Telegram:', event);
 
-    const body = JSON.parse(event.body);
+  // должен быть парсинг event.body
+  const body = JSON.parse(event.body || '{}');
 
-    if (!body || (!body.message && !body.callback_query)) {
-      return { statusCode: 200, body: 'not a telegram update' };
-    }
-
-    await bot.handleUpdate(body);
-
-    return { statusCode: 200, body: 'ok' };
-  } catch (err) {
-    console.error('❌ Ошибка в handler:', err);
-    return { statusCode: 500, body: 'internal error' };
+  // Проверка на обновление Telegram
+  if (!body.message && !body.callback_query) {
+    return { statusCode: 200, body: 'not a telegram update' };
   }
+
+  // здесь вызов твоего Telegraf-бота
+  await bot.handleUpdate(body);
+
+  return { statusCode: 200, body: 'ok' };
 };
+
+
