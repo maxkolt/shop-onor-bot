@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const { adSubmissionScene } = require('./adSubmissionScene');
-const { UserModel, AdModel } = require('./models');
+const { adSubmissionScene } = require('./src/bot/adSubmissionScene');
+const { UserModel, AdModel } = require('./src/bot/models');
 
 const categoryMap = {
   auto: '🚗 Авто',

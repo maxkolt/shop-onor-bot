@@ -2,10 +2,10 @@
   "name": "onor-app",
   "version": "1.0.0",
   "description": "Telegram bot for submitting and managing ads with subscription functionality",
-  "main": "src/bot/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/bot/index.js",
-    "dev": "nodemon src/bot/index.js",
+    "start": "node index.js",
+    "dev": "nodemon index.js",
     "list-subscriptions": "node scripts/listSubscriptions.js"
   },
   "dependencies": {
