@@ -15,7 +15,7 @@ const categoryMap = {
   pets: '🐾 Товары для животных'
 };
 
-// Загрузка переменных окружения
+// Настройки окружения
 const {
   BOT_TOKEN,
   MONGO_URI,
@@ -24,22 +24,34 @@ const {
 } = process.env;
 
 if (!BOT_TOKEN || !MONGO_URI || !WEBHOOK_URL) {
-  console.error('❌ BOT_TOKEN, MONGO_URI или WEBHOOK_URL не указаны в .env');
+  console.error('❌ Не заданы BOT_TOKEN, MONGO_URI или WEBHOOK_URL');
   process.exit(1);
 }
 
-// Инициализация бота
+// Инициализация бота и сессии
 const bot = new Telegraf(BOT_TOKEN);
-
-// Настройка сессий и middleware
 bot.use(session());
+
+// Ограничение ввода локации
 bot.use((ctx, next) => {
   if (ctx.session?.awaitingLocationInput) {
     const text = ctx.message?.text;
-    const allowed = ['/cancel', '/start', '/setlocation'];
-    if (allowed.includes(text)) return next();
+    if (['/cancel', '/start', '/setlocation'].includes(text)) return next();
     if (text?.startsWith('/')) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
     if (ctx.callbackQuery) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
+  }
+  return next();
+});
+
+// Глобальный отменяющий middleware для /cancel
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text === '/cancel') {
+    ctx.session.awaitingLocationInput = false;
+    delete ctx.session.category;
+    if (ctx.scene && ctx.scene.current) {
+      await ctx.scene.leave();
+    }
+    return ctx.reply('❌ Отменено.');
   }
   return next();
 });
@@ -58,7 +70,7 @@ function mainMenu() {
   ]).resize();
 }
 
-// Хендлеры команд
+// Команды
 bot.command('start', async ctx => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
@@ -71,7 +83,7 @@ bot.command('start', async ctx => {
     });
     await user.save();
   }
-  if (!user.location?.city || user.location.city === 'не указано') {
+  if (!user.location.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocationInput = true;
     return ctx.reply('📍 Введите локацию (страна город):', Markup.removeKeyboard());
   }
@@ -84,46 +96,31 @@ bot.command('setlocation', ctx => {
   return ctx.reply('📍 Введите локацию (страна город):', Markup.removeKeyboard());
 });
 
-bot.command('cancel', async ctx => {
-  // Сброс всех промежуточных состояний
-  ctx.session.awaitingLocationInput = false;
-  delete ctx.session.category;
-  // Выход из сцены, если она активна
-  if (ctx.scene && ctx.scene.current) {
-    await ctx.scene.leave();
-  }
-  // Просто уведомляем об отмене без вывода меню
-  return ctx.reply('❌ Отменено.');
-});
-
-
 // Обработка ввода локации
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const raw = ctx.message.text.trim();
-    const parts = raw.split(/[\s,]+/).filter(Boolean);
+    const parts = raw.split(/[,\s]+/).filter(Boolean);
     const country = parts.length > 1 ? parts[0] : 'не указано';
     const city = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
-
     let user = await UserModel.findOne({ userId: ctx.chat.id });
     if (!user) {
       user = new UserModel({ userId: ctx.chat.id, adCount: 0, hasSubscription: false });
     }
     user.location = { country, city };
     await user.save();
-
     ctx.session.awaitingLocationInput = false;
     return ctx.reply(`✅ Локация: ${country}, ${city}`, mainMenu());
   }
   return next();
 });
 
-// Основные пункты меню
+// Меню бота
 bot.hears('Подать объявление', ctx => ctx.scene.enter('adSubmission'));
 bot.hears('Объявления в моём городе', async ctx => { ctx.session.offset = 0; await sendCityAds(ctx); });
 bot.hears('Фильтр по категории', ctx => {
   ctx.session.offset = 0;
-  return ctx.reply('Выберите:', Markup.inlineKeyboard([
+  return ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
     [Markup.button.callback(categoryMap.auto, 'filter_auto')],
     [Markup.button.callback(categoryMap.tech, 'filter_tech')],
     [Markup.button.callback(categoryMap.real_estate, 'filter_real_estate')],
@@ -132,13 +129,22 @@ bot.hears('Фильтр по категории', ctx => {
     [Markup.button.callback(categoryMap.pets, 'filter_pets')]
   ]));
 });
-bot.hears('Канал с объявлениями', ctx => ctx.reply('Сюда 👇', Markup.inlineKeyboard([
-  Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
-])));
-bot.hears('Помощь', ctx => ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', { parse_mode: 'MarkdownV2' }));
+bot.hears('Канал с объявлениями', ctx =>
+  ctx.reply('Сюда 👇', Markup.inlineKeyboard([
+    Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
+  ]))
+);
+bot.hears('Помощь', ctx =>
+  ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', { parse_mode: 'MarkdownV2' })
+);
 
-// Обработчики callback
-bot.action(/filter_(.+)/, async ctx => { ctx.session.cat = ctx.match[1]; ctx.session.offset = 0; await ctx.answerCbQuery(); await sendCityAds(ctx, ctx.session.cat); });
+// Фильтрация объявлений
+bot.action(/filter_(.+)/, async ctx => {
+  ctx.session.cat = ctx.match[1];
+  ctx.session.offset = 0;
+  await ctx.answerCbQuery();
+  await sendCityAds(ctx, ctx.session.cat);
+});
 bot.action('more', async ctx => { ctx.session.offset += 5; await ctx.answerCbQuery(); await sendCityAds(ctx, ctx.session.cat); });
 
 // Личные объявления
@@ -160,7 +166,7 @@ bot.hears('Мои объявления', async ctx => {
 async function sendCityAds(ctx, cat = null) {
   const user = await UserModel.findOne({ userId: ctx.chat.id });
   if (!user || user.location.city === 'не указано') {
-    return ctx.reply('⚠️ /setlocation: Россия Москва');
+    return ctx.reply('⚠️ Установите локацию: /setlocation');
   }
   const { city: uCity, country: uCountry } = user.location;
   const qCity = uCity.toLowerCase();
@@ -177,7 +183,7 @@ async function sendCityAds(ctx, cat = null) {
     if (match && (!cat || ad.category === cat)) filtered.push(ad);
     if (filtered.length >= (ctx.session.offset || 0) + 5) break;
   }
-  if (!filtered.length) return ctx.reply(`🔍 Нет объявлений в ${uCity || uCountry}`);
+  if (!filtered.length) return ctx.reply(`🔍 Нет объявлений в ${uCity}`);
   const page = filtered.slice(ctx.session.offset, ctx.session.offset + 5);
   for (const ad of page) {
     const adUser = await UserModel.findOne({ userId: ad.userId });
@@ -190,21 +196,32 @@ async function sendCityAds(ctx, cat = null) {
       default: await ctx.replyWithHTML(caption);
     }
   }
-  if (filtered.length > (ctx.session.offset || 0) + 5) await ctx.reply('⬇️ Ещё?', Markup.inlineKeyboard([Markup.button.callback('Ещё', 'more')]));
+  if (filtered.length > (ctx.session.offset || 0) + 5) {
+    await ctx.reply('⬇️ Ещё?', Markup.inlineKeyboard([Markup.button.callback('Ещё', 'more')]));
+  }
 }
 
-// Старт бота: сначала MongoDB, затем webhook и сервер
+// Обработчик ошибок
+bot.catch(err => console.error(err));
+
+// Старт бота: подключение к БД, webhook, команды и сервер
 async function start() {
   try {
     await mongoose.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000 // падение при недоступности БД за 5 сек
+      serverSelectionTimeoutMS: 5000
     });
     console.log('✅ MongoDB подключена');
 
     await bot.telegram.setWebhook(WEBHOOK_URL);
     console.log('✅ Webhook установлен на', WEBHOOK_URL);
+
+    await bot.telegram.setMyCommands([
+      { command: 'start', description: 'запустить бота' },
+      { command: 'setlocation', description: 'изменить локацию' },
+      { command: 'cancel', description: 'отмена текущей операции' }
+    ]);
 
     const app = express();
     app.use(bot.webhookCallback('/'));
