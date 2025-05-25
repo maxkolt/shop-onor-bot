@@ -20,19 +20,10 @@ const mainMenuKeyboard = Markup.keyboard([
   ['Мои объявления']
 ]).resize();
 
+// Сцена подачи объявления
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 
-// /cancel внутри сцены
-adSubmissionScene.command('cancel', async (ctx) => {
-  delete ctx.session.category;
-  await ctx.reply(
-    '❌ Подача объявления отменена.',
-    mainMenuKeyboard
-  );
-  return ctx.scene.leave();
-});
-
-// Переход по любой кнопке меню до выбора категории
+// Переход по любой кнопке меню до выбора категории — отмена сцены
 adSubmissionScene.use(async (ctx, next) => {
   const text = ctx.message?.text;
   const menuButtons = [
@@ -44,20 +35,11 @@ adSubmissionScene.use(async (ctx, next) => {
     'Мои объявления'
   ];
   if (text && menuButtons.includes(text) && !ctx.session.category) {
-    // отменяем ввод объявления
-    await ctx.reply('❌ Вы отменили подачу объявления. Сделайте выбор в меню:', mainMenuKeyboard);
+    await ctx.reply('❌ Вы отменили подачу объявления. Сделайте выбор используя кнопки:', mainMenuKeyboard);
     await ctx.scene.leave();
-    // передаём обратно управление боту для обработки нажатия кнопки
-    return ctx.telegram.handleUpdate({
-      ...ctx.update,
-      message: { ...ctx.message, text }
-    }, ctx.telegram);
+    return; // отменили, не продолжаем сцену
   }
-  return next();
-});
-
-// Блокировка команд внутри сцены
-adSubmissionScene.use((ctx, next) => {
+  // запрет команд во время подачи, кроме /cancel
   const txt = ctx.message?.text || '';
   if (txt.startsWith('/') && txt !== '/cancel') {
     return ctx.reply('⛔ Команды недоступны во время подачи объявления. Введите описание или воспользуйтесь кнопками.');
@@ -96,17 +78,6 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   );
 });
 
-// Генерация подписи
-const generateCaption = (category, description) => {
-  const now = new Date();
-  const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `📢 <b>Новое объявление!</b>\n\n` +
-    `📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n` +
-    `📝 <b>Описание:</b> ${description}\n\n` +
-    `📅 ${date}, ${time}`;
-};
-
 // Обработка текста (описание)
 adSubmissionScene.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
@@ -137,19 +108,16 @@ adSubmissionScene.on('text', async (ctx) => {
 async function handleMedia(ctx, type, fileId) {
   const userId = ctx.chat.id;
   const category = ctx.session.category;
-  if (!category) {
-    await ctx.reply('❗ Сначала выберите категорию.');
-    return ctx.scene.leave();
-  }
-  const description = ctx.message.caption?.trim() || 'Описание отсутствует';
-  await new AdModel({ userId, category, description, mediaType: type, mediaFileId: fileId, createdAt: new Date() }).save();
+  if (!category) return ctx.reply('❗ Сначала выберите категорию.');
+
+  const description = ctx.session.description || '';
   const user = await UserModel.findOne({ userId });
   user.adCount++;
   await user.save();
 
   const sendMap = {
-    photo: () => ctx.telegram.sendPhoto(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
-    video: () => ctx.telegram.sendVideo(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    photo:    () => ctx.telegram.sendPhoto(CHANNEL_ID, fileId,    { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+    video:    () => ctx.telegram.sendVideo(CHANNEL_ID, fileId,    { caption: generateCaption(category, description), parse_mode: 'HTML' }),
     document: () => ctx.telegram.sendDocument(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
   };
   await sendMap[type]();
