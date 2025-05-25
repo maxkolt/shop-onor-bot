@@ -1,11 +1,9 @@
 require('dotenv').config();
-const express = require('express');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 const { adSubmissionScene } = require('./adSubmissionScene');
 const { UserModel, AdModel } = require('./models');
 
-// Карта категорий
 const categoryMap = {
   auto: '🚗 Авто',
   tech: '📱 Техника',
@@ -15,24 +13,18 @@ const categoryMap = {
   pets: '🐾 Товары для животных'
 };
 
-// Настройки окружения
-const {
-  BOT_TOKEN,
-  MONGO_URI,
-  WEBHOOK_URL,
-  PORT = 10000,
-} = process.env;
+const { BOT_TOKEN, MONGO_URI } = process.env;
 
-if (!BOT_TOKEN || !MONGO_URI || !WEBHOOK_URL) {
-  console.error('❌ Не заданы BOT_TOKEN, MONGO_URI или WEBHOOK_URL');
+if (!BOT_TOKEN || !MONGO_URI) {
+  console.error('❌ Не заданы BOT_TOKEN или MONGO_URI');
   process.exit(1);
 }
 
-// Инициализация бота и сессии
 const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
+const stage = new Scenes.Stage([adSubmissionScene]);
+bot.use(stage.middleware());
 
-// Ограничение ввода локации
 bot.use((ctx, next) => {
   if (ctx.session?.awaitingLocationInput) {
     const text = ctx.message?.text;
@@ -43,24 +35,16 @@ bot.use((ctx, next) => {
   return next();
 });
 
-// Глобальный отменяющий middleware для /cancel
 bot.use(async (ctx, next) => {
   if (ctx.message?.text === '/cancel') {
     ctx.session.awaitingLocationInput = false;
     delete ctx.session.category;
-    if (ctx.scene && ctx.scene.current) {
-      await ctx.scene.leave();
-    }
+    if (ctx.scene?.current) await ctx.scene.leave();
     return ctx.reply('❌ Отменено.');
   }
   return next();
 });
 
-// Сцена подачи объявления
-const stage = new Scenes.Stage([adSubmissionScene]);
-bot.use(stage.middleware());
-
-// Главное меню
 function mainMenu() {
   return Markup.keyboard([
     ['Подать объявление'],
@@ -70,7 +54,6 @@ function mainMenu() {
   ]).resize();
 }
 
-// Команды
 bot.command('start', async ctx => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
@@ -83,7 +66,7 @@ bot.command('start', async ctx => {
     });
     await user.save();
   }
-  if (!user.location.city || user.location.city === 'не указано') {
+  if (!user.location?.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocationInput = true;
     return ctx.reply('📍 Введите локацию (страна город):', Markup.removeKeyboard());
   }
@@ -96,7 +79,6 @@ bot.command('setlocation', ctx => {
   return ctx.reply('📍 Введите локацию (страна город):', Markup.removeKeyboard());
 });
 
-// Обработка ввода локации
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const raw = ctx.message.text.trim();
@@ -115,7 +97,6 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// Меню бота
 bot.hears('Подать объявление', ctx => ctx.scene.enter('adSubmission'));
 bot.hears('Объявления в моём городе', async ctx => { ctx.session.offset = 0; await sendCityAds(ctx); });
 bot.hears('Фильтр по категории', ctx => {
@@ -138,7 +119,6 @@ bot.hears('Помощь', ctx =>
   ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', { parse_mode: 'MarkdownV2' })
 );
 
-// Фильтрация объявлений
 bot.action(/filter_(.+)/, async ctx => {
   ctx.session.cat = ctx.match[1];
   ctx.session.offset = 0;
@@ -147,7 +127,6 @@ bot.action(/filter_(.+)/, async ctx => {
 });
 bot.action('more', async ctx => { ctx.session.offset += 5; await ctx.answerCbQuery(); await sendCityAds(ctx, ctx.session.cat); });
 
-// Личные объявления
 bot.hears('Мои объявления', async ctx => {
   const ads = await AdModel.find({ userId: ctx.chat.id }).sort({ createdAt: -1 });
   if (!ads.length) return ctx.reply('Нет ваших объявлений');
@@ -162,7 +141,6 @@ bot.hears('Мои объявления', async ctx => {
   }
 });
 
-// Функция вывода объявлений по городу и категории
 async function sendCityAds(ctx, cat = null) {
   const user = await UserModel.findOne({ userId: ctx.chat.id });
   if (!user || user.location.city === 'не указано') {
@@ -201,35 +179,38 @@ async function sendCityAds(ctx, cat = null) {
   }
 }
 
-// Обработчик ошибок
-bot.catch(err => console.error(err));
+bot.catch(err => console.error('❌ Bot error:', err));
 
-// Старт бота: подключение к БД, webhook, команды и сервер
-async function start() {
-  try {
+// 🔁 Подключение к Mongo один раз
+let mongoConnected = false;
+async function connectMongo() {
+  if (!mongoConnected) {
     await mongoose.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000
     });
     console.log('✅ MongoDB подключена');
-
-    await bot.telegram.setWebhook(WEBHOOK_URL);
-    console.log('✅ Webhook установлен на', WEBHOOK_URL);
-
-    await bot.telegram.setMyCommands([
-      { command: 'start', description: 'запустить бота' },
-      { command: 'setlocation', description: 'изменить локацию' },
-      { command: 'cancel', description: 'отмена текущей операции' }
-    ]);
-
-    const app = express();
-    app.use(bot.webhookCallback('/'));
-    app.listen(PORT, () => console.log(`✅ Сервер запущен на порту ${PORT}`));
-  } catch (error) {
-    console.error('❌ Ошибка при старте бота:', error);
-    process.exit(1);
+    mongoConnected = true;
   }
 }
 
-start();
+// 📦 Экспорт обработчика для Yandex Cloud Functions
+module.exports.handler = async function(event, context) {
+  try {
+    await connectMongo();
+
+    const body = JSON.parse(event.body);
+
+    if (!body || (!body.message && !body.callback_query)) {
+      return { statusCode: 200, body: 'not a telegram update' };
+    }
+
+    await bot.handleUpdate(body);
+
+    return { statusCode: 200, body: 'ok' };
+  } catch (err) {
+    console.error('❌ Ошибка в handler:', err);
+    return { statusCode: 500, body: 'internal error' };
+  }
+};
