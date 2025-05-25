@@ -85,15 +85,17 @@ bot.command('setlocation', ctx => {
 });
 
 bot.command('cancel', async ctx => {
-  if (ctx.session.awaitingLocationInput) {
-    ctx.session.awaitingLocationInput = false;
-    await ctx.reply('❌ Отменено. Перезапускаем...');
-    return bot.handleUpdate(
-      { ...ctx.update, message: { ...ctx.message, text: '/start' } },
-      ctx.telegram
-    );
+  // Сброс всех промежуточных состояний
+  ctx.session.awaitingLocationInput = false;
+  delete ctx.session.category;
+  // Выход из сцены, если она активна
+  if (ctx.scene && ctx.scene.current) {
+    await ctx.scene.leave();
   }
+  // Просто уведомляем об отмене без вывода меню
+  return ctx.reply('❌ Отменено.');
 });
+
 
 // Обработка ввода локации
 bot.on('text', async (ctx, next) => {
