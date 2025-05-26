@@ -1,4 +1,3 @@
-require('dotenv').config();
 const { Telegraf, Scenes, session, Markup } = require('telegraf');
 const mongoose = require('mongoose');
 const { adSubmissionScene } = require('./src/bot/adSubmissionScene');

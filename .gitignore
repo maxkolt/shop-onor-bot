@@ -1,4 +1,7 @@
+bot-function.zip
+bot-source/
+.idea/
 .env
-.idea
-/node_modules
-
+node_modules/
+npm-debug.log
+.DS_Store
