@@ -24,5 +24,8 @@ curl -s -X POST https://api.telegram.org/bot7703511185:AAHjt8dRuP4uSPfzRXCgZGmYj
 \
   -d "url=https://functions.yandexcloud.net/d4e1eje8e7s44fs41uk4" > /dev/null
 
-echo "✅ Готово! Код загружен и webhook обновлён."
+echo "📡 Проверяем webhook..."
+curl -s https://api.telegram.org/bot7703511185:AAHjt8dRuP4uSPfzRXCgZGmYjek8Zwc0OmE/getWebhookInfo
+
+echo "✅ Готово! Код загружен, webhook обновлён, бот готов принимать сообщения."
 
