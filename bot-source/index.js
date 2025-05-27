@@ -1,4 +1,4 @@
-const { Telegraf, Scenes, session, Markup } = require('telegraf');
+const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
 const { adSubmissionScene } = require('./src/bot/adSubmissionScene');
 const { UserModel, AdModel } = require('./src/bot/models');
@@ -12,10 +12,13 @@ const categoryMap = {
   pets: '🐾 Товары для животных'
 };
 
-const { BOT_TOKEN, MONGO_URI } = process.env;
+const {
+  BOT_TOKEN,
+  MONGO_URI
+} = process.env;
 
 if (!BOT_TOKEN || !MONGO_URI) {
-  console.error('❌ BOT_TOKEN или MONGO_URI не заданы');
+  console.error('❌ Не заданы BOT_TOKEN или MONGO_URI');
   process.exit(1);
 }
 
@@ -32,7 +35,29 @@ function mainMenu() {
   ]).resize();
 }
 
-bot.command('start', async (ctx) => {
+bot.use((ctx, next) => {
+  if (ctx.session?.awaitingLocationInput) {
+    const text = ctx.message?.text;
+    if (['/cancel', '/start', '/setlocation'].includes(text)) return next();
+    if (text?.startsWith('/')) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
+    if (ctx.callbackQuery) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
+  }
+  return next();
+});
+
+bot.use(async (ctx, next) => {
+  if (ctx.message?.text === '/cancel') {
+    ctx.session.awaitingLocationInput = false;
+    delete ctx.session.category;
+    if (ctx.scene && ctx.scene.current) {
+      await ctx.scene.leave();
+    }
+    return ctx.reply('❌ Отменено.');
+  }
+  return next();
+});
+
+bot.command('start', async ctx => {
   const userId = ctx.chat.id;
   let user = await UserModel.findOne({ userId });
   if (!user) {
@@ -44,12 +69,10 @@ bot.command('start', async (ctx) => {
     });
     await user.save();
   }
-
-  if (!user.location?.city || user.location.city === 'не указано') {
+  if (!user.location.city || user.location.city === 'не указано') {
     ctx.session.awaitingLocationInput = true;
     return ctx.reply('📍 Введите локацию (страна город):', Markup.removeKeyboard());
   }
-
   ctx.session.awaitingLocationInput = false;
   return ctx.reply('🎉 Добро пожаловать! Используйте меню:', mainMenu());
 });
@@ -78,12 +101,7 @@ bot.on('text', async (ctx, next) => {
 });
 
 bot.hears('Подать объявление', ctx => ctx.scene.enter('adSubmission'));
-
-bot.hears('Объявления в моём городе', async ctx => {
-  ctx.session.offset = 0;
-  await sendCityAds(ctx);
-});
-
+bot.hears('Объявления в моём городе', async ctx => { ctx.session.offset = 0; await sendCityAds(ctx); });
 bot.hears('Фильтр по категории', ctx => {
   ctx.session.offset = 0;
   return ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
@@ -95,19 +113,12 @@ bot.hears('Фильтр по категории', ctx => {
     [Markup.button.callback(categoryMap.pets, 'filter_pets')]
   ]));
 });
-
-bot.hears('Канал с объявлениями', ctx => {
-  ctx.reply('Сюда 👇', Markup.inlineKeyboard([
-    Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
-  ]));
-});
-
-bot.hears('Помощь', ctx => {
-  ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', {
-    parse_mode: 'MarkdownV2'
-  });
-});
-
+bot.hears('Канал с объявлениями', ctx => ctx.reply('Сюда 👇', Markup.inlineKeyboard([
+  Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
+])));
+bot.hears('Помощь', ctx => ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', {
+  parse_mode: 'MarkdownV2'
+}));
 bot.hears('Мои объявления', async ctx => {
   const ads = await AdModel.find({ userId: ctx.chat.id }).sort({ createdAt: -1 });
   if (!ads.length) return ctx.reply('Нет ваших объявлений');
@@ -128,7 +139,6 @@ bot.action(/filter_(.+)/, async ctx => {
   await ctx.answerCbQuery();
   await sendCityAds(ctx, ctx.session.cat);
 });
-
 bot.action('more', async ctx => {
   ctx.session.offset += 5;
   await ctx.answerCbQuery();
@@ -140,25 +150,21 @@ async function sendCityAds(ctx, cat = null) {
   if (!user || user.location.city === 'не указано') {
     return ctx.reply('⚠️ Установите локацию: /setlocation');
   }
-
   const { city: uCity, country: uCountry } = user.location;
   const qCity = uCity.toLowerCase();
   const qCountry = uCountry.toLowerCase();
   const allAds = await AdModel.find({}).sort({ createdAt: -1 });
   const filtered = [];
-
   for (const ad of allAds) {
     const adUser = await UserModel.findOne({ userId: ad.userId });
     if (!adUser) continue;
     const cCity = adUser.location.city.toLowerCase();
     const cCountry = adUser.location.country.toLowerCase();
-    let match = (qCity && cCity.includes(qCity)) || (qCountry && cCountry.includes(qCountry));
+    const match = (qCity && cCity.includes(qCity)) || (qCountry && cCountry.includes(qCountry));
     if (match && (!cat || ad.category === cat)) filtered.push(ad);
     if (filtered.length >= (ctx.session.offset || 0) + 5) break;
   }
-
   if (!filtered.length) return ctx.reply(`🔍 Нет объявлений в ${uCity}`);
-
   const page = filtered.slice(ctx.session.offset, ctx.session.offset + 5);
   for (const ad of page) {
     const adUser = await UserModel.findOne({ userId: ad.userId });
@@ -171,7 +177,6 @@ async function sendCityAds(ctx, cat = null) {
       default: await ctx.replyWithHTML(caption);
     }
   }
-
   if (filtered.length > (ctx.session.offset || 0) + 5) {
     await ctx.reply('⬇️ Ещё?', Markup.inlineKeyboard([
       Markup.button.callback('Ещё', 'more')
