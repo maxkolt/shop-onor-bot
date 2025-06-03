@@ -81,7 +81,8 @@ bot.command('cancel', async ctx => {
   if (ctx.session.awaitingLocationInput) {
     ctx.session.awaitingLocationInput = false;
     await ctx.reply('❌ Отменено. Перезапускаем...');
-    return ctx.scene.leave() || bot.handleUpdate({ ...ctx.update, message: { ...ctx.message, text: '/start' } }, ctx.telegram);
+    await ctx.scene.leave(); // ✅ ДОБАВИТЬ await
+    return bot.handleUpdate({ ...ctx.update, message: { ...ctx.message, text: '/start' } }, ctx.telegram);
   }
 });
 
@@ -91,6 +92,7 @@ bot.on('text', async (ctx, next) => {
     const parts = raw.split(/\s|,+/).filter(Boolean);
     const country = parts.length > 1 ? parts[0] : 'не указано';
     const city = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+    console.log('Локация:', country, city);
     let user = await UserModel.findOne({ userId: ctx.chat.id });
     if (!user) user = new UserModel({ userId: ctx.chat.id, adCount: 0, hasSubscription: false });
     user.location = { country, city };

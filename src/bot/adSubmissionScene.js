@@ -90,6 +90,7 @@ adSubmissionScene.enter(async (ctx) => {
 
 adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = ctx.match[1];
+  await ctx.answerCbQuery(); //
   await ctx.reply(`Вы выбрали категорию: ${categoryMap[ctx.session.category]}.
 1. Введите описание объявления.
 2. Прикрепите фото/видео/файл.
@@ -98,6 +99,7 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
 
 Для отмены введите /cancel`, { reply_markup: { remove_keyboard: true } });
 });
+
 
 const generateCaption = (category, description) => {
   const now = new Date();
