@@ -195,8 +195,20 @@ async function sendCityAds(ctx, cat = null) {
 bot.catch(err => console.error(err));
 
 const app = express();
-app.use(bot.webhookCallback('/'));
-app.listen(PORT, async () => {
-  console.log('✅ Запущено');
-  await bot.telegram.setWebhook(WEBHOOK_URL);
+app.use(express.json());
+
+app.post('/', async (req, res) => {
+  try {
+    await bot.handleUpdate(req.body);
+    res.send('ok');
+  } catch (err) {
+    console.error('❌ Ошибка обработки webhook:', err);
+    res.status(500).send('error');
+  }
 });
+
+app.listen(PORT, async () => {
+  await bot.telegram.setWebhook(WEBHOOK_URL);
+  console.log(`🚀 Сервер запущен на http://0.0.0.0:${PORT}`);
+});
+
