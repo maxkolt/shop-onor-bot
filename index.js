@@ -1,7 +1,9 @@
+const express = require('express');
+const bodyParser = require('body-parser');
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const mongoose = require('mongoose');
-const { adSubmissionScene } = require('./adSubmissionScene');
-const { UserModel, AdModel } = require('./models');
+const { adSubmissionScene } = require('./src/bot/adSubmissionScene');
+const { UserModel, AdModel } = require('./src/bot/models');
 
 const categoryMap = {
   auto: '🚗 Авто',
@@ -12,7 +14,7 @@ const categoryMap = {
   pets: '🐾 Товары для животных'
 };
 
-const { BOT_TOKEN, MONGO_URI } = process.env;
+const { BOT_TOKEN, MONGO_URI, PORT = 3000 } = process.env;
 
 if (!BOT_TOKEN || !MONGO_URI) {
   console.error('❌ Не заданы BOT_TOKEN или MONGO_URI');
@@ -82,7 +84,7 @@ bot.command('setlocation', ctx => {
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const raw = ctx.message.text.trim();
-    const parts = raw.split(/[,\s]+/).filter(Boolean);
+    const parts = raw.split(/[\,\s]+/).filter(Boolean);
     const country = parts.length > 1 ? parts[0] : 'не указано';
     const city = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
     let user = await UserModel.findOne({ userId: ctx.chat.id });
@@ -217,18 +219,23 @@ async function connectMongo() {
   }
 }
 
-module.exports.handler = async function(event, context) {
+const app = express();
+app.use(bodyParser.json());
+
+app.post('/', async (req, res) => {
   try {
-    console.log('🔥 Запрос от Telegram:', event);
-    await connectMongo();
-    const body = JSON.parse(event.body || '{}');
-    if (!body.message && !body.callback_query) {
-      return { statusCode: 200, body: 'not a telegram update' };
-    }
-    await bot.handleUpdate(body);
-    return { statusCode: 200, body: 'ok' };
+    await bot.handleUpdate(req.body);
+    res.send('ok');
   } catch (err) {
-    console.error('❌ Ошибка в handler:', err);
-    return { statusCode: 500, body: 'internal error' };
+    console.error('❌ Ошибка в webhook:', err);
+    res.status(500).send('error');
   }
-};
+});
+
+app.listen(PORT, '0.0.0.0', async () => {
+  await connectMongo();
+  console.log(`🚀 Сервер запущен на http://0.0.0.0:${PORT}`);
+});
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
