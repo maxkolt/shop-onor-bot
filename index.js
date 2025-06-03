@@ -22,8 +22,9 @@ if (!BOT_TOKEN || !MONGO_URI) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
+const stage = new Scenes.Stage([adSubmissionScene]);
 bot.use(session());
-bot.use(new Scenes.Stage([adSubmissionScene]).middleware());
+bot.use(stage.middleware());
 
 function mainMenu() {
   return Markup.keyboard([
@@ -48,6 +49,7 @@ bot.use(async (ctx, next) => {
   if (ctx.message?.text === '/cancel') {
     ctx.session.awaitingLocationInput = false;
     delete ctx.session.category;
+    delete ctx.session.description;
     if (ctx.scene && ctx.scene.current) {
       await ctx.scene.leave();
     }
@@ -84,7 +86,7 @@ bot.command('setlocation', ctx => {
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const raw = ctx.message.text.trim();
-    const parts = raw.split(/[\,\s]+/).filter(Boolean);
+    const parts = raw.split(/[\s,]+/).filter(Boolean);
     const country = parts.length > 1 ? parts[0] : 'не указано';
     const city = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
     let user = await UserModel.findOne({ userId: ctx.chat.id });
