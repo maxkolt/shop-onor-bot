@@ -66,20 +66,15 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } catch (e) {
-      // Если не получилось, пробуем удалить старую инструкцию (если она вообще была)
       try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.hintMsgId); } catch {}
-      // Присылаем новую инструкцию и сохраняем её id
       const m = await ctx.replyWithHTML(hintText);
       ctx.session.hintMsgId = m.message_id;
     }
   } else {
-    // Первый раз — просто прислать и сохранить id
     const m = await ctx.replyWithHTML(hintText);
     ctx.session.hintMsgId = m.message_id;
   }
 });
-
-
 
 adSubmissionScene.on('photo', async (ctx) => {
   const fileId = ctx.message.photo.slice(-1)[0].file_id;
@@ -160,14 +155,14 @@ adSubmissionScene.on('text', async (ctx) => {
     }
     await publishAd(ctx, { userId, category, description: text, mediaType, mediaFileId });
     ctx.session = {};
-    await ctx.reply('📍 Выберите действие:', mainMenuKeyboard);
+    await ctx.reply('Используйте меню:', mainMenuKeyboard);
     return ctx.scene.leave();
   }
   if (!category) return ctx.reply('❗ Сначала выберите категорию.');
   if (!text || text.startsWith('/')) return ctx.reply('Описание не может быть пустым или начинаться с "/"');
   await publishAd(ctx, { userId, category, description: text });
   ctx.session = {};
-  await ctx.reply('📍 Выберите действие:', mainMenuKeyboard);
+  await ctx.reply('Используйте меню:', mainMenuKeyboard);
   ctx.scene.leave();
 });
 
