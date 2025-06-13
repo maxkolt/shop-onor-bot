@@ -22,63 +22,16 @@ const mainMenuKeyboard = Markup.keyboard([
 const adSubmissionScene = new Scenes.BaseScene('adSubmission');
 
 adSubmissionScene.command('cancel', async (ctx) => {
-  delete ctx.session.category;
   await ctx.reply('❌ Вы отменили подачу объявления.', mainMenuKeyboard);
-  return ctx.scene.leave();
-});
-
-adSubmissionScene.use(async (ctx, next) => {
-  const text = ctx.message?.text;
-  const menuButtons = [
-    'Подать объявление',
-    'Объявления в моём городе',
-    'Фильтр по категории',
-    'Канал с объявлениями',
-    'Помощь',
-    'Мои объявления'
-  ];
-  if (text && menuButtons.includes(text) && !ctx.session.category) {
-    delete ctx.session.category;
-    await ctx.reply('❌ Вы отменили подачу объявления.', mainMenuKeyboard);
-    ctx.scene.leave();
-    switch (text) {
-      case 'Канал с объявлениями':
-        return ctx.reply('Сюда 👇', Markup.inlineKeyboard([Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')]));
-      case 'Помощь':
-        return ctx.reply('По всем вопросам обращайтесь к администратору: @max12kolt');
-      case 'Объявления в моём городе':
-        ctx.session.offset = 0;
-        return sendCityAds(ctx);
-      case 'Фильтр по категории':
-        ctx.session.offset = 0;
-        return ctx.reply('Выберите категорию:', Markup.inlineKeyboard([
-          [Markup.button.callback('🚗 Авто', 'filter_auto')],
-          [Markup.button.callback('📱 Техника', 'filter_tech')],
-          [Markup.button.callback('🏠 Недвижимость', 'filter_real_estate')],
-          [Markup.button.callback('👗 Одежда/Обувь', 'filter_clothing')],
-          [Markup.button.callback('📦 Прочее', 'filter_other')],
-          [Markup.button.callback('🐾 Товары для животных', 'filter_pets')]
-        ]));
-      case 'Мои объявления':
-        return showMyAds(ctx);
-      case 'Подать объявление':
-        return ctx.scene.enter('adSubmission');
-    }
-  }
-  return next();
-});
-
-adSubmissionScene.use((ctx, next) => {
-  const txt = ctx.message?.text || '';
-  if (txt.startsWith('/') && txt !== '/cancel') {
-    return ctx.reply('⛔ Команды недоступны во время подачи объявления. Введите описание или воспользуйтесь кнопками.');
-  }
-  return next();
+  await ctx.scene.leave();
+  ctx.session = {};
 });
 
 adSubmissionScene.enter(async (ctx) => {
-  delete ctx.session.category;
-  await ctx.reply('Выберите категорию для подачи объявления:', Markup.inlineKeyboard([
+  ctx.session.category = null;
+  ctx.session.hintMsgId = null;
+  // Показываем кнопки выбора категории
+  const catMsg = await ctx.reply('Выберите категорию для подачи объявления:', Markup.inlineKeyboard([
     [Markup.button.callback('Авто', 'category_auto')],
     [Markup.button.callback('Техника', 'category_tech')],
     [Markup.button.callback('Недвижимость', 'category_real_estate')],
@@ -86,80 +39,166 @@ adSubmissionScene.enter(async (ctx) => {
     [Markup.button.callback('Прочее', 'category_other')],
     [Markup.button.callback('Товары для животных', 'category_pets')]
   ]));
+  ctx.session.catMsgId = catMsg.message_id;
 });
 
 adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = ctx.match[1];
-  await ctx.answerCbQuery(); //
-  await ctx.reply(`Вы выбрали категорию: ${categoryMap[ctx.session.category]}.
+  await ctx.answerCbQuery();
+
+  // Подсказка-инструкция с названием выбранной категории
+  const hintText = `✅ Вы выбрали категорию: <b>${categoryMap[ctx.session.category]}</b>.
+
 1. Введите описание объявления.
 2. Прикрепите фото/видео/файл.
-3. Контакты (По желанию).
-4. Укажите локацию (страна, город).
+3. Контакты (по желанию).
+4. Укажите локацию.
 
-Для отмены введите /cancel`, { reply_markup: { remove_keyboard: true } });
+Для отмены введите /cancel.`;
+
+  // Если уже была инструкция — обнови её через editMessageText
+  if (ctx.session.hintMsgId) {
+    try {
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        ctx.session.hintMsgId,
+        undefined,
+        hintText,
+        { parse_mode: 'HTML' }
+      );
+    } catch (e) {
+      // если не получилось (например, сообщение удалено), просто пришли новое
+      const m = await ctx.replyWithHTML(hintText);
+      ctx.session.hintMsgId = m.message_id;
+    }
+  } else {
+    // Первый раз — просто прислать
+    const m = await ctx.replyWithHTML(hintText);
+    ctx.session.hintMsgId = m.message_id;
+  }
 });
 
 
-const generateCaption = (category, description) => {
-  const now = new Date();
-  const date = now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `📢 <b>Новое объявление!</b>\n\n📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n📝 <b>Описание:</b> ${description}\n\n📅 ${date}, ${time}`;
-};
+adSubmissionScene.on('photo', async (ctx) => {
+  const fileId = ctx.message.photo.slice(-1)[0].file_id;
+  const caption = ctx.message.caption?.trim();
+  if (caption) {
+    return await publishAdFromMedia(ctx, 'photo', fileId, caption);
+  }
+  return await handleMediaWithoutCaption(ctx, 'photo', fileId);
+});
+
+adSubmissionScene.on('video', async (ctx) => {
+  const fileId = ctx.message.video.file_id;
+  const caption = ctx.message.caption?.trim();
+  if (caption) {
+    return await publishAdFromMedia(ctx, 'video', fileId, caption);
+  }
+  return await handleMediaWithoutCaption(ctx, 'video', fileId);
+});
+
+adSubmissionScene.on('document', async (ctx) => {
+  const fileId = ctx.message.document.file_id;
+  const caption = ctx.message.caption?.trim();
+  if (caption) {
+    return await publishAdFromMedia(ctx, 'document', fileId, caption);
+  }
+  return await handleMediaWithoutCaption(ctx, 'document', fileId);
+});
+
+async function handleMediaWithoutCaption(ctx, type, fileId) {
+  if (!ctx.session.category) {
+    return ctx.reply('❗ Сначала выберите категорию.');
+  }
+  ctx.session.mediaType = type;
+  ctx.session.mediaFileId = fileId;
+  ctx.session.awaitingDescriptionConfirmation = true;
+  await ctx.reply('❓ Хотите добавить описание к файлу?', Markup.inlineKeyboard([
+    [Markup.button.callback('Да', 'confirm_description_yes'), Markup.button.callback('Нет', 'confirm_description_no')]
+  ]));
+}
+
+async function publishAdFromMedia(ctx, type, fileId, caption) {
+  const userId = ctx.chat.id;
+  const category = ctx.session.category;
+  await publishAd(ctx, { userId, category, description: caption, mediaType: type, mediaFileId: fileId });
+  ctx.session = {};
+  await ctx.reply('📍 Выберите действие:', mainMenuKeyboard);
+  return ctx.scene.leave();
+}
+
+adSubmissionScene.action('confirm_description_yes', async (ctx) => {
+  ctx.session.awaitingDescription = true;
+  ctx.session.awaitingDescriptionConfirmation = false;
+  await ctx.answerCbQuery();
+  await ctx.reply('✏️ Введите описание:');
+});
+
+adSubmissionScene.action('confirm_description_no', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply('⚠️ Без описания публикация невозможна. Используйте меню ниже.', mainMenuKeyboard);
+  await ctx.scene.leave();
+  ctx.session = {};
+});
 
 adSubmissionScene.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
   const userId = ctx.chat.id;
   const category = ctx.session.category;
-
+  if (ctx.session.awaitingDescriptionConfirmation) {
+    return ctx.reply('❗ Пожалуйста, выберите "Да" или "Нет" на предыдущий вопрос.');
+  }
+  if (ctx.session.awaitingDescription) {
+    ctx.session.awaitingDescription = false;
+    const { mediaType, mediaFileId } = ctx.session;
+    if (!mediaType || !mediaFileId) {
+      await ctx.reply('❗ Ошибка. Попробуйте снова.', mainMenuKeyboard);
+      ctx.session = {};
+      return ctx.scene.leave();
+    }
+    await publishAd(ctx, { userId, category, description: text, mediaType, mediaFileId });
+    ctx.session = {};
+    await ctx.reply('📍 Выберите действие:', mainMenuKeyboard);
+    return ctx.scene.leave();
+  }
   if (!category) return ctx.reply('❗ Сначала выберите категорию.');
   if (!text || text.startsWith('/')) return ctx.reply('Описание не может быть пустым или начинаться с "/"');
+  await publishAd(ctx, { userId, category, description: text });
+  ctx.session = {};
+  await ctx.reply('📍 Выберите действие:', mainMenuKeyboard);
+  ctx.scene.leave();
+});
 
+function generateCaption(category, description) {
+  const now = new Date();
+  const date = now.toLocaleDateString('ru-RU');
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return `📢 <b>Новое объявление!</b>\n\n📂 <b>Категория:</b> <i>${categoryMap[category]}</i>\n📝 <b>Описание:</b> ${description}\n\n📅 ${date}, ${time}`;
+}
+
+async function publishAd(ctx, { userId, category, description, mediaType = null, mediaFileId = null }) {
   try {
-    await new AdModel({ userId, category, description: text, createdAt: new Date() }).save();
+    await new AdModel({ userId, category, description, mediaType, mediaFileId, createdAt: new Date() }).save();
     const user = await UserModel.findOne({ userId });
-    user.adCount++;
-    await user.save();
-
-    await ctx.telegram.sendMessage(CHANNEL_ID, generateCaption(category, text), { parse_mode: 'HTML' });
+    if (user) {
+      user.adCount++;
+      await user.save();
+    }
+    if (mediaType && mediaFileId) {
+      const sendMap = {
+        photo: () => ctx.telegram.sendPhoto(CHANNEL_ID, mediaFileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+        video: () => ctx.telegram.sendVideo(CHANNEL_ID, mediaFileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
+        document: () => ctx.telegram.sendDocument(CHANNEL_ID, mediaFileId, { caption: generateCaption(category, description), parse_mode: 'HTML' })
+      };
+      await sendMap[mediaType]();
+    } else {
+      await ctx.telegram.sendMessage(CHANNEL_ID, generateCaption(category, description), { parse_mode: 'HTML' });
+    }
     await ctx.reply('✅ Объявление добавлено!');
   } catch (err) {
     console.error(err);
     await ctx.reply('❌ Не удалось добавить объявление. Попробуйте позже.');
   }
-
-  delete ctx.session.category;
-  ctx.scene.leave();
-});
-
-async function handleMedia(ctx, type, fileId) {
-  const userId = ctx.chat.id;
-  const category = ctx.session.category;
-  if (!category) {
-    await ctx.reply('❗ Сначала выберите категорию.');
-    return ctx.scene.leave();
-  }
-  const description = ctx.message.caption?.trim() || 'Описание отсутствует';
-  await new AdModel({ userId, category, description, mediaType: type, mediaFileId: fileId, createdAt: new Date() }).save();
-  const user = await UserModel.findOne({ userId });
-  user.adCount++;
-  await user.save();
-
-  const sendMap = {
-    photo: () => ctx.telegram.sendPhoto(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
-    video: () => ctx.telegram.sendVideo(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' }),
-    document: () => ctx.telegram.sendDocument(CHANNEL_ID, fileId, { caption: generateCaption(category, description), parse_mode: 'HTML' })
-  };
-  await sendMap[type]();
-
-  await ctx.reply('✅ Объявление добавлено!');
-  delete ctx.session.category;
-  ctx.scene.leave();
 }
-
-adSubmissionScene.on('photo', ctx => handleMedia(ctx, 'photo', ctx.message.photo.slice(-1)[0].file_id));
-adSubmissionScene.on('video', ctx => handleMedia(ctx, 'video', ctx.message.video.file_id));
-adSubmissionScene.on('document', ctx => handleMedia(ctx, 'document', ctx.message.document.file_id));
 
 module.exports = { adSubmissionScene };

@@ -1,9 +1,14 @@
 require('dotenv').config();
 const express = require('express');
-const { Telegraf, Markup, Scenes, session } = require('telegraf');
+const { Telegraf, Scenes, session, Markup } = require('telegraf');
 const mongoose = require('mongoose');
 const { adSubmissionScene } = require('./src/bot/adSubmissionScene');
 const { UserModel, AdModel } = require('./src/bot/models');
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const MONGO_URI = process.env.MONGO_URI;
+const WEBHOOK_URL = process.env.WEBHOOK_URL; // Пример: 'https://xxxx.eu.ngrok.io'
+const PORT = process.env.PORT || 3000;
 
 const categoryMap = {
   auto: '🚗 Авто',
@@ -14,38 +19,21 @@ const categoryMap = {
   pets: '🐾 Товары для животных'
 };
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const MONGO_URI = process.env.MONGO_URI;
-const PORT = process.env.PORT || 3000;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
-
 if (!BOT_TOKEN || !MONGO_URI || !WEBHOOK_URL) {
-  console.error('❌ BOT_TOKEN, MONGO_URI или WEBHOOK_URL не указаны в .env');
+  console.error('❌ Не указаны BOT_TOKEN, MONGO_URI или WEBHOOK_URL в .env');
   process.exit(1);
 }
 
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('✅ MongoDB подключена'))
   .catch(err => {
-    console.error('❌ Ошибка подключения к MongoDB:', err.message);
+    console.error('❌ Ошибка подключения к MongoDB:', err);
     process.exit(1);
   });
 
 const bot = new Telegraf(BOT_TOKEN);
-bot.use(session());
-
-bot.use((ctx, next) => {
-  if (ctx.session?.awaitingLocationInput) {
-    const t = ctx.message?.text;
-    const allow = ['/cancel', '/start', '/setlocation', 'Канал с объявлениями', 'Помощь'];
-    if (allow.includes(t)) return next();
-    if (t?.startsWith('/')) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
-    if (ctx.callbackQuery) return ctx.reply('⚠️ Сначала введите локацию или /cancel');
-  }
-  return next();
-});
-
 const stage = new Scenes.Stage([adSubmissionScene]);
+bot.use(session());
 bot.use(stage.middleware());
 
 function mainMenu() {
@@ -78,21 +66,18 @@ bot.command('setlocation', ctx => {
 });
 
 bot.command('cancel', async ctx => {
-  if (ctx.session.awaitingLocationInput) {
-    ctx.session.awaitingLocationInput = false;
-    await ctx.reply('❌ Отменено. Перезапускаем...');
-    await ctx.scene.leave(); // ✅ ДОБАВИТЬ await
-    return bot.handleUpdate({ ...ctx.update, message: { ...ctx.message, text: '/start' } }, ctx.telegram);
-  }
+  ctx.session.awaitingLocationInput = false;
+  await ctx.scene.leave();
+  return ctx.reply('❌ Действие отменено.', mainMenu());
 });
 
+// обработка локации пользователя
 bot.on('text', async (ctx, next) => {
   if (ctx.session.awaitingLocationInput) {
     const raw = ctx.message.text.trim();
     const parts = raw.split(/\s|,+/).filter(Boolean);
     const country = parts.length > 1 ? parts[0] : 'не указано';
     const city = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
-    console.log('Локация:', country, city);
     let user = await UserModel.findOne({ userId: ctx.chat.id });
     if (!user) user = new UserModel({ userId: ctx.chat.id, adCount: 0, hasSubscription: false });
     user.location = { country, city };
@@ -122,15 +107,15 @@ bot.hears('Фильтр по категории', ctx => {
   ]));
 });
 
-bot.hears('Канал с объявлениями', async ctx => {
-  await ctx.reply('Сюда 👇', Markup.inlineKeyboard([
+bot.hears('Канал с объявлениями', ctx =>
+  ctx.reply('Сюда 👇', Markup.inlineKeyboard([
     Markup.button.url('Перейти в канал', 'https://t.me/+SpQdiZHBoypiNDky')
-  ]));
-});
+  ]))
+);
 
-bot.hears('Помощь', async ctx => {
-  await ctx.reply('По всем вопросам обращайтесь к администратору:\n[Администратор: @max12kolt](https://t.me/max12kolt)', { parse_mode: 'MarkdownV2' });
-});
+bot.hears('Помощь', ctx =>
+  ctx.reply('По всем вопросам: @max12kolt')
+);
 
 bot.action(/filter_(.+)/, async ctx => {
   ctx.session.cat = ctx.match[1];
@@ -157,6 +142,7 @@ bot.hears('Мои объявления', async ctx => {
   }
 });
 
+// функция для показа объявлений по фильтру и городу
 async function sendCityAds(ctx, cat = null) {
   const user = await UserModel.findOne({ userId: ctx.chat.id });
   if (!user || user.location.city === 'не указано') return ctx.reply('⚠️ /setlocation: Россия Москва');
@@ -194,23 +180,20 @@ async function sendCityAds(ctx, cat = null) {
   }
 }
 
-bot.catch(err => console.error(err));
+bot.catch(err => console.error('Ошибка:', err));
 
+// Express-сервер для webhook
 const app = express();
 app.use(express.json());
 
-app.post('/', async (req, res) => {
-  try {
-    await bot.handleUpdate(req.body);
-    res.send('ok');
-  } catch (err) {
-    console.error('❌ Ошибка обработки webhook:', err);
-    res.status(500).send('error');
-  }
+// endpoint для telegram webhook
+app.post('/webhook', (req, res) => {
+  bot.handleUpdate(req.body, res);
 });
 
+// Запускаем сервер и регистрируем webhook
 app.listen(PORT, async () => {
-  await bot.telegram.setWebhook(WEBHOOK_URL);
-  console.log(`🚀 Сервер запущен на http://0.0.0.0:${PORT}`);
+  await bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`);
+  console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
+  console.log(`🤖 Webhook URL зарегистрирован: ${WEBHOOK_URL}/webhook`);
 });
-
