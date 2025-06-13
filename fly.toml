@@ -1,20 +1,20 @@
-app = "shop-onor-bot"
-primary_region = "ams"
-
-[env]
-PORT = "3000"
-
-[[services]]
-protocol = "tcp"
-internal_port = 3000
-auto_start = true
-auto_stop = false
-processes = ["app"]
-
-[[services.ports]]
-port = 80
-handlers = ["http"]
-
-[[services.ports]]
-port = 443
-handlers = ["tls", "http"]
+#app = "shop-onor-bot"
+#primary_region = "ams"
+#
+#[env]
+#PORT = "3000"
+#
+#[[services]]
+#protocol = "tcp"
+#internal_port = 3000
+#auto_start = true
+#auto_stop = false
+#processes = ["app"]
+#
+#[[services.ports]]
+#port = 80
+#handlers = ["http"]
+#
+#[[services.ports]]
+#port = 443
+#handlers = ["tls", "http"]
