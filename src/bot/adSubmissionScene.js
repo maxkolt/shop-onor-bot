@@ -46,7 +46,6 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
   ctx.session.category = ctx.match[1];
   await ctx.answerCbQuery();
 
-  // Подсказка-инструкция с названием выбранной категории
   const hintText = `✅ Вы выбрали категорию: <b>${categoryMap[ctx.session.category]}</b>.
 
 1. Введите описание объявления.
@@ -56,7 +55,7 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
 
 Для отмены введите /cancel.`;
 
-  // Если уже была инструкция — обнови её через editMessageText
+  // Если уже была инструкция — попробуй её заменить
   if (ctx.session.hintMsgId) {
     try {
       await ctx.telegram.editMessageText(
@@ -67,16 +66,19 @@ adSubmissionScene.action(/category_(.+)/, async (ctx) => {
         { parse_mode: 'HTML' }
       );
     } catch (e) {
-      // если не получилось (например, сообщение удалено), просто пришли новое
+      // Если не получилось, пробуем удалить старую инструкцию (если она вообще была)
+      try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.session.hintMsgId); } catch {}
+      // Присылаем новую инструкцию и сохраняем её id
       const m = await ctx.replyWithHTML(hintText);
       ctx.session.hintMsgId = m.message_id;
     }
   } else {
-    // Первый раз — просто прислать
+    // Первый раз — просто прислать и сохранить id
     const m = await ctx.replyWithHTML(hintText);
     ctx.session.hintMsgId = m.message_id;
   }
 });
+
 
 
 adSubmissionScene.on('photo', async (ctx) => {
